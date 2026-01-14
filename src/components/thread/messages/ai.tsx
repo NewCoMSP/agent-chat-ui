@@ -14,6 +14,14 @@ import { ThreadView } from "../agent-inbox";
 import { useQueryState, parseAsBoolean } from "nuqs";
 import { GenericInterruptView } from "./generic-interrupt";
 import { useArtifact } from "../artifact";
+import { ReflexionGraph } from "../reflexion-graph";
+
+// Expose the local useArtifact hook to the generative UI context
+// ensuring the external component finds it when requiring "@local/artifact"
+import { experimental_loadShare } from "@langchain/langgraph-sdk/react-ui";
+experimental_loadShare("@local/artifact", {
+  useArtifact,
+});
 
 function CustomComponent({
   message,
@@ -24,21 +32,36 @@ function CustomComponent({
 }) {
   const artifact = useArtifact();
   const { values } = useStreamContext();
+
   const customComponents = values.ui?.filter(
     (ui) => ui.metadata?.message_id === message.id,
   );
 
   if (!customComponents?.length) return null;
+
   return (
     <Fragment key={message.id}>
-      {customComponents.map((customComponent) => (
-        <LoadExternalComponent
-          key={customComponent.id}
-          stream={thread}
-          message={customComponent}
-          meta={{ ui: customComponent, artifact }}
-        />
-      ))}
+      {customComponents.map((customComponent) => {
+        // Local Override for ReflexionGraph
+        if (customComponent.name === "ReflexionGraph" || customComponent.name === "ReflexionArtifact") {
+          return (
+            <ReflexionGraph
+              key={customComponent.id}
+              html={customComponent.props?.html as any}
+              artifactInstance={artifact}
+            />
+          );
+        }
+
+        return (
+          <LoadExternalComponent
+            key={customComponent.id}
+            stream={thread}
+            message={customComponent}
+            meta={{ ui: customComponent, artifact }}
+          />
+        );
+      })}
     </Fragment>
   );
 }
@@ -81,7 +104,7 @@ function Interrupt({
   const fallbackValue = Array.isArray(interrupt)
     ? (interrupt as Record<string, any>[])
     : (((interrupt as { value?: unknown } | undefined)?.value ??
-        interrupt) as Record<string, any>);
+      interrupt) as Record<string, any>);
 
   return (
     <>
@@ -90,8 +113,8 @@ function Interrupt({
           <ThreadView interrupt={interrupt} />
         )}
       {interrupt &&
-      !isAgentInboxInterruptSchema(interrupt) &&
-      (isLastMessage || hasNoAIOrToolMessages) ? (
+        !isAgentInboxInterruptSchema(interrupt) &&
+        (isLastMessage || hasNoAIOrToolMessages) ? (
         <GenericInterruptView interrupt={fallbackValue} />
       ) : null}
     </>
