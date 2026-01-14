@@ -214,13 +214,13 @@ export function Thread() {
     const context =
       Object.keys(artifactContext).length > 0 ? artifactContext : undefined;
 
-    stream.submit(
+    (stream as any).submit(
       { messages: [...toolMessages, newHumanMessage], context },
       {
         streamMode: ["values"],
         streamSubgraphs: true,
         streamResumable: true,
-        optimisticValues: (prev) => ({
+        optimisticValues: (prev: any) => ({
           ...prev,
           context,
           messages: [
@@ -242,7 +242,7 @@ export function Thread() {
     // Do this so the loading state is correct
     prevMessageLength.current = prevMessageLength.current - 1;
     setFirstTokenReceived(false);
-    stream.submit(undefined, {
+    (stream as any).submit(undefined, {
       checkpoint: parentCheckpoint,
       streamMode: ["values"],
       streamSubgraphs: true,
@@ -400,7 +400,13 @@ export function Thread() {
               content={
                 <>
                   {messages
-                    .filter((m) => !m.id?.startsWith(DO_NOT_RENDER_ID_PREFIX))
+                    .filter((m) => {
+                      return (
+                        !m.id?.startsWith(DO_NOT_RENDER_ID_PREFIX) &&
+                        (m as any).type !== "ui" &&
+                        m.type !== "tool"
+                      );
+                    })
                     .map((message, index) =>
                       message.type === "human" ? (
                         <HumanMessage
