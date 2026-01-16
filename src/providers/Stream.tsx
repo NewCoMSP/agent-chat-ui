@@ -24,6 +24,7 @@ import { PasswordInput } from "@/components/ui/password-input";
 import { getApiKey } from "@/lib/api-key";
 import { useThreads } from "./Thread";
 import { toast } from "sonner";
+import { useBranding } from "./Branding";
 
 export type StateType = { messages: Message[]; ui?: UIMessage[] };
 
@@ -39,7 +40,17 @@ const useTypedStream = useStream<
   }
 >;
 
-type StreamContextType = ReturnType<typeof useTypedStream>;
+// Cast to the full UseStream type since we're using callbacks that return UseStreamCustom
+// but we need access to the full API (getMessagesMetadata, setBranch, etc.)
+import type { UseStream } from "@langchain/langgraph-sdk/react";
+type StreamContextType = UseStream<StateType, {
+  UpdateType: {
+    messages?: Message[] | Message | string;
+    ui?: (UIMessage | RemoveUIMessage)[] | UIMessage | RemoveUIMessage;
+    context?: Record<string, unknown>;
+  };
+  CustomEventType: UIMessage | RemoveUIMessage;
+}>;
 const StreamContext = createContext<StreamContextType | undefined>(undefined);
 
 async function sleep(ms = 4000) {
@@ -99,7 +110,7 @@ const StreamSession = ({
       // Wait for some seconds before fetching so we're able to get the new thread that was created.
       sleep().then(() => getThreads().then(setThreads).catch(console.error));
     },
-  });
+  }) as StreamContextType; // Cast to full UseStream type
 
   useEffect(() => {
     checkGraphStatus(apiUrl, apiKey).then((ok) => {
@@ -160,6 +171,7 @@ export const StreamProvider: React.FC<{ children: ReactNode }> = ({
   // Determine final values to use, prioritizing URL params then env vars
   const finalApiUrl = apiUrl || envApiUrl;
   const finalAssistantId = assistantId || envAssistantId;
+  const { branding } = useBranding();
 
   // Show the form if we: don't have an API URL, or don't have an assistant ID
   if (!finalApiUrl || !finalAssistantId) {
@@ -168,13 +180,13 @@ export const StreamProvider: React.FC<{ children: ReactNode }> = ({
         <div className="animate-in fade-in-0 zoom-in-95 bg-background flex max-w-3xl flex-col rounded-lg border shadow-lg">
           <div className="mt-14 flex flex-col gap-2 border-b p-6">
             <div className="flex flex-col items-start gap-2">
-              <LangGraphLogoSVG className="h-7" />
+              <LangGraphLogoSVG className="h-7 text-primary" />
               <h1 className="text-xl font-semibold tracking-tight">
-                Agent Chat
+                {branding.brand_title}
               </h1>
             </div>
             <p className="text-muted-foreground">
-              Welcome to Agent Chat! Before you get started, you need to enter
+              Welcome to {branding.brand_title}! Before you get started, you need to enter
               the URL of the deployment and the assistant / graph ID.
             </p>
           </div>

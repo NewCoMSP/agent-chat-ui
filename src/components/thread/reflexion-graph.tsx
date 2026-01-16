@@ -14,6 +14,7 @@ export function ReflexionGraph({ html, artifactInstance: providedInstance }: Ref
     const [Artifact, { setOpen, open }] = artifactInstance;
     const autoOpened = React.useRef(false);
     const id = React.useId();
+    const containerRef = React.useRef<HTMLDivElement>(null);
 
     React.useEffect(() => {
         if (html && !open && !autoOpened.current) {
@@ -23,11 +24,25 @@ export function ReflexionGraph({ html, artifactInstance: providedInstance }: Ref
         }
     }, [html, setOpen, open, id]);
 
+    React.useEffect(() => {
+        const container = containerRef.current;
+        if (!container) return;
+
+        const handleWheel = (e: WheelEvent) => {
+            // Block scroll leakage to parent
+            e.stopPropagation();
+        };
+
+        container.addEventListener("wheel", handleWheel, { passive: false });
+        return () => container.removeEventListener("wheel", handleWheel);
+    }, []);
+
     if (!html) return null;
 
     return (
         <Artifact title="Knowledge Graph">
             <div
+                ref={containerRef}
                 key={html.substring(0, 100)} // Force fresh render if content changes significantly
                 style={{
                     width: "100%",

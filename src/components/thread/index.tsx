@@ -4,6 +4,7 @@ import { motion } from "framer-motion";
 import { cn } from "@/lib/utils";
 import { useStreamContext } from "@/providers/Stream";
 import { useState, FormEvent } from "react";
+import { useBranding } from "@/providers/Branding";
 import { Button } from "../ui/button";
 import { Checkpoint, Message } from "@langchain/langgraph-sdk";
 import { AssistantMessage, AssistantMessageLoading } from "./messages/ai";
@@ -22,6 +23,7 @@ import {
   SquarePen,
   XIcon,
   Plus,
+  Sparkles,
 } from "lucide-react";
 import { useQueryState, parseAsBoolean } from "nuqs";
 import { StickToBottom, useStickToBottomContext } from "use-stick-to-bottom";
@@ -45,6 +47,8 @@ import {
   ArtifactTitle,
   useArtifactContext,
 } from "./artifact";
+import { ThemeToggle } from "../theme-toggle";
+import { ProductPanel } from "../product-panel/ProductPanel";
 
 function StickyToBottomContent(props: {
   content: ReactNode;
@@ -112,6 +116,7 @@ function OpenGitHubRepo() {
 }
 
 export function Thread() {
+  const { branding } = useBranding();
   const [artifactContext, setArtifactContext] = useArtifactContext();
   const [artifactOpen, closeArtifact] = useArtifactOpen();
 
@@ -136,6 +141,7 @@ export function Thread() {
     handlePaste,
   } = useFileUpload();
   const [firstTokenReceived, setFirstTokenReceived] = useState(false);
+  const [releaseNotesOpen, setReleaseNotesOpen] = useState(false);
   const isLargeScreen = useMediaQuery("(min-width: 1024px)");
 
   const stream = useStreamContext();
@@ -259,7 +265,7 @@ export function Thread() {
     <div className="flex h-screen w-full overflow-hidden">
       <div className="relative hidden lg:flex">
         <motion.div
-          className="absolute z-20 h-full overflow-hidden border-r bg-white"
+          className="absolute z-20 h-full overflow-hidden border-r bg-background"
           style={{ width: 300 }}
           animate={
             isLargeScreen
@@ -325,8 +331,17 @@ export function Thread() {
                   </Button>
                 )}
               </div>
-              <div className="absolute top-2 right-4 flex items-center">
-                <OpenGitHubRepo />
+              <div className="absolute top-2 right-4 flex items-center gap-4">
+                <ThemeToggle />
+                <TooltipIconButton
+                  size="lg"
+                  className="p-4"
+                  tooltip="What's New"
+                  variant="ghost"
+                  onClick={() => setReleaseNotesOpen(true)}
+                >
+                  <Sparkles className="size-5" />
+                </TooltipIconButton>
               </div>
             </div>
           )}
@@ -363,17 +378,27 @@ export function Thread() {
                   <LangGraphLogoSVG
                     width={32}
                     height={32}
+                    className="text-primary"
                   />
                   <span className="text-xl font-semibold tracking-tight">
-                    Agent Chat
+                    {branding.brand_title}
                   </span>
                 </motion.button>
               </div>
 
               <div className="flex items-center gap-4">
-                <div className="flex items-center">
-                  <OpenGitHubRepo />
+                <div className="flex items-center gap-4">
+                  <ThemeToggle />
                 </div>
+                <TooltipIconButton
+                  size="lg"
+                  className="p-4"
+                  tooltip="What's New"
+                  variant="ghost"
+                  onClick={() => setReleaseNotesOpen(true)}
+                >
+                  <Sparkles className="size-5" />
+                </TooltipIconButton>
                 <TooltipIconButton
                   size="lg"
                   className="p-4"
@@ -439,12 +464,12 @@ export function Thread() {
                 </>
               }
               footer={
-                <div className="sticky bottom-0 flex flex-col items-center gap-8 bg-white">
+                <div className="sticky bottom-0 flex flex-col items-center gap-8 bg-background">
                   {!chatStarted && (
                     <div className="flex items-center gap-3">
-                      <LangGraphLogoSVG className="h-8 flex-shrink-0" />
+                      <LangGraphLogoSVG className="h-8 flex-shrink-0 text-primary" />
                       <h1 className="text-2xl font-semibold tracking-tight">
-                        Agent Chat
+                        {branding.brand_title}
                       </h1>
                     </div>
                   )}
@@ -566,6 +591,7 @@ export function Thread() {
           </div>
         </div>
       </div>
+      <ProductPanel open={releaseNotesOpen} onClose={() => setReleaseNotesOpen(false)} />
     </div>
   );
 }

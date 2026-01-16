@@ -1,0 +1,36 @@
+[
+    {
+        "id": "v1.2.0",
+        "version": "1.2.0",
+        "date": "2026-01-16",
+        "title": "Methodology Intake, Project Hydration & Enterprise Branding",
+        "description": "Major deployment featuring the new Knowledge Architecture, automatic project hydration, and acceptable Enterprise Branding system.",
+        "features": [
+            {
+                "name": "Project Hydration Architecture",
+                "description": "Automatic enrichment of customer models with best practices using a new Knowledge Repository and structured guides."
+            },
+            {
+                "name": "Enterprise Branding System",
+                "description": "Configurable client identity system supporting scoped aesthetics (standard vs. pill-shaped interactive elements) and unified color schemes.",
+                "recording_path": "/recordings/daikin-branding.json"
+            },
+            {
+                "name": "Enhanced Supervisor",
+                "description": "Implemented mandatory two-step orientation and handoff validation for robust agent orchestration."
+            },
+            {
+                "name": "Knowledge Graph Visualization",
+                "description": "Deep methodology rendering in the details panel with intelligent artifact link suggestions and resolved scroll leakage."
+            },
+            {
+                "name": "New Tools & Modules",
+                "description": "Added lookup_detailed_knowledge and save_external_context tools, plus new project_model.py for state management."
+            },
+            {
+                "name": "Infrastructure Improvements",
+                "description": "Robust git-based versioning with Docker support and fixed async tool invocation errors."
+            }
+        ]
+    }
+]

@@ -4,6 +4,7 @@ import { Inter } from "next/font/google";
 import React from "react";
 import { NuqsAdapter } from "nuqs/adapters/next/app";
 import { TooltipProvider } from "@/components/ui/tooltip";
+import { ThemeProvider } from "next-themes";
 
 const inter = Inter({
   subsets: ["latin"],
@@ -12,9 +13,11 @@ const inter = Inter({
 });
 
 export const metadata: Metadata = {
-  title: "Agent Chat",
-  description: "Agent Chat UX by LangChain",
+  title: process.env.NEXT_PUBLIC_CLIENT_NAME === "daikin" ? "Reflexion | Daikin" : "Reflexion Agent",
+  description: "Advanced Agentic Coding Environment",
 };
+
+import { BrandingProvider } from "@/providers/Branding";
 
 export default function RootLayout({
   children,
@@ -22,13 +25,17 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en">
+    <html lang="en" suppressHydrationWarning>
       <body className={inter.className}>
-        <NuqsAdapter>
-          <TooltipProvider>
-            {children}
-          </TooltipProvider>
-        </NuqsAdapter>
+        <ThemeProvider attribute="class" defaultTheme="light" enableSystem>
+          <BrandingProvider>
+            <NuqsAdapter>
+              <TooltipProvider>
+                {children}
+              </TooltipProvider>
+            </NuqsAdapter>
+          </BrandingProvider>
+        </ThemeProvider>
       </body>
     </html>
   );
