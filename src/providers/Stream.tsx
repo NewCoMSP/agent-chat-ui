@@ -4,6 +4,7 @@ import React, {
   ReactNode,
   useState,
   useEffect,
+  useMemo,
 } from "react";
 import { useStream } from "@langchain/langgraph-sdk/react";
 import { type Message } from "@langchain/langgraph-sdk";
@@ -26,7 +27,19 @@ import { useThreads } from "./Thread";
 import { toast } from "sonner";
 import { useBranding } from "./Branding";
 
-export type StateType = { messages: Message[]; ui?: UIMessage[] };
+export type StateType = {
+  messages: Message[];
+  ui?: UIMessage[];
+  current_trigger_id?: string;
+  confidence_score?: number;
+  required_artifacts?: string[];
+  governing_mechanisms?: string[];
+  active_risks?: string[];
+  user_project_description?: string;
+  context?: Record<string, unknown>;
+  active_agent?: "supervisor" | "hydrator";
+  visualization_html?: string;
+};
 
 const useTypedStream = useStream<
   StateType,
@@ -50,7 +63,10 @@ type StreamContextType = UseStream<StateType, {
     context?: Record<string, unknown>;
   };
   CustomEventType: UIMessage | RemoveUIMessage;
-}>;
+}> & {
+  setApiKey: (key: string) => void;
+  apiUrl: string;
+};
 const StreamContext = createContext<StreamContextType | undefined>(undefined);
 
 async function sleep(ms = 4000) {
@@ -82,35 +98,90 @@ const StreamSession = ({
   apiKey,
   apiUrl,
   assistantId,
+  setApiKey,
 }: {
   children: ReactNode;
   apiKey: string | null;
   apiUrl: string;
   assistantId: string;
+  setApiKey: (key: string) => void;
 }) => {
   const [threadId, setThreadId] = useQueryState("threadId");
   const { getThreads, setThreads } = useThreads();
-  const streamValue = useTypedStream({
+  const rawStream = useTypedStream({
     apiUrl,
     apiKey: apiKey ?? undefined,
-    assistantId,
-    threadId: threadId ?? null,
-    fetchStateHistory: true,
+    assistantId: assistantId || "reflexion",
+    threadId: threadId || undefined,
+    fetchStateHistory: !!threadId,
     onCustomEvent: (event, options) => {
+      console.log("[Stream] Custom event received:", event);
       if (isUIMessage(event) || isRemoveUIMessage(event)) {
         options.mutate((prev) => {
-          const ui = uiMessageReducer(prev.ui ?? [], event);
-          return { ...prev, ui };
+          if (!prev) return { messages: [], ui: uiMessageReducer([], event) };
+          return { ...prev, ui: uiMessageReducer(prev.ui ?? [], event) };
         });
       }
     },
+    onError: (error) => {
+      console.error("[Stream] SDK Error:", error);
+    },
     onThreadId: (id) => {
+      console.log("[Stream] Thread ID changed to:", id);
       setThreadId(id);
-      // Refetch threads list when thread ID changes.
-      // Wait for some seconds before fetching so we're able to get the new thread that was created.
       sleep().then(() => getThreads().then(setThreads).catch(console.error));
     },
-  }) as StreamContextType; // Cast to full UseStream type
+  });
+
+  // Detailed Client-Side Logging for State Transitions
+  useEffect(() => {
+    if (rawStream.values) {
+      console.log("[Stream] Values Updated:", {
+        agent: rawStream.values.active_agent,
+        trigger: rawStream.values.current_trigger_id,
+        risks: (rawStream.values as any).active_risks?.length ?? 0,
+        hasContext: !!(rawStream.values as any).context,
+      });
+    }
+  }, [rawStream.values]);
+
+  // Dynamic Proxy Wrapper
+  // This ensure ANY access to the context always gets the latest hook state 
+  // but with forced null-safety for problematic fields.
+  const streamValue = useMemo(() => {
+    return new Proxy({} as any, {
+      get(_, prop) {
+        // Direct property overrides from Provider state
+        if (prop === "setApiKey") return setApiKey;
+        if (prop === "apiUrl") return apiUrl;
+
+        // Safety check: if rawStream itself is null, provide safe defaults
+        if (!rawStream) {
+          if (prop === "messages") return [];
+          if (prop === "values") return { messages: [], ui: [] };
+          if (prop === "error") return null;
+          if (prop === "isLoading") return false;
+          if (prop === "stop" || prop === "submit") return () => { console.warn(`[Stream] Called ${String(prop)} while stream is null`); };
+          return undefined;
+        }
+
+        // Dynamic property access from the raw hook state
+        // We read from rawStream directly to ensure we have the absolute latest state
+        const value = (rawStream as any)[prop];
+
+        // Safety Fallbacks
+        if (prop === "messages") return value ?? [];
+        if (prop === "values") return value ?? { messages: [], ui: [] };
+        if (prop === "error") return value ?? null;
+        if (prop === "isLoading") return value ?? false;
+
+        // Methods need to be bound or returned as-is
+        if (typeof value === "function") return value.bind(rawStream);
+
+        return value;
+      }
+    });
+  }, [rawStream, apiKey, apiUrl]);
 
   useEffect(() => {
     checkGraphStatus(apiUrl, apiKey).then((ok) => {
@@ -138,8 +209,9 @@ const StreamSession = ({
 };
 
 // Default values for the form
-const DEFAULT_API_URL = "http://localhost:2024";
-const DEFAULT_ASSISTANT_ID = "agent";
+// Default values for the local stack (Proxy at 8080)
+const DEFAULT_API_URL = "http://localhost:8080";
+const DEFAULT_ASSISTANT_ID = "reflexion";
 
 export const StreamProvider: React.FC<{ children: ReactNode }> = ({
   children,
@@ -172,6 +244,45 @@ export const StreamProvider: React.FC<{ children: ReactNode }> = ({
   const finalApiUrl = apiUrl || envApiUrl;
   const finalAssistantId = assistantId || envAssistantId;
   const { branding } = useBranding();
+
+  // Auto-login for Democracy (Daikin Identity)
+  useEffect(() => {
+    const autoLogin = async () => {
+      // Only auto-login if:
+      // 1. No key is present
+      // 2. OR the key looks like a stale LangSmith token (starts with lsv2_ or gsmith)
+      //    We want to replace these with our fresh JWT for the Daikin flow.
+      const isStaleKey = !apiKey || (typeof apiKey === "string" && (apiKey.startsWith("lsv2_") || apiKey.startsWith("gsmith")));
+
+      if (isStaleKey && finalApiUrl) {
+        try {
+          console.log("[AutoLogin] Detected stale or missing key, fetching fresh identity...");
+          // Attempt to get a demo token from the proxy
+          const res = await fetch(`${finalApiUrl}/auth/token`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              customer_id: "daikin",
+              project_id: "demo-web-01",
+              role: "admin"
+            })
+          });
+
+          if (res.ok) {
+            const data = await res.json();
+            if (data.access_token) {
+              console.log("[AutoLogin] Success: Generated fresh JWT");
+              setApiKey(data.access_token);
+            }
+          }
+        } catch (e) {
+          console.warn("[AutoLogin] Failed to fetch token:", e);
+        }
+      }
+    };
+
+    autoLogin();
+  }, [finalApiUrl, apiKey]);
 
   // Show the form if we: don't have an API URL, or don't have an assistant ID
   if (!finalApiUrl || !finalAssistantId) {
@@ -280,6 +391,7 @@ export const StreamProvider: React.FC<{ children: ReactNode }> = ({
       apiKey={apiKey}
       apiUrl={apiUrl}
       assistantId={assistantId}
+      setApiKey={setApiKey}
     >
       {children}
     </StreamSession>

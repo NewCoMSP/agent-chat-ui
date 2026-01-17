@@ -1,9 +1,10 @@
+"use client";
+
 import { v4 as uuidv4 } from "uuid";
-import { ReactNode, useEffect, useRef } from "react";
+import { ReactNode, useEffect, useRef, useState, FormEvent } from "react";
 import { motion } from "framer-motion";
 import { cn } from "@/lib/utils";
 import { useStreamContext } from "@/providers/Stream";
-import { useState, FormEvent } from "react";
 import { useBranding } from "@/providers/Branding";
 import { Button } from "../ui/button";
 import { Checkpoint, Message } from "@langchain/langgraph-sdk";
@@ -20,10 +21,11 @@ import {
   LoaderCircle,
   PanelRightOpen,
   PanelRightClose,
-  SquarePen,
   XIcon,
   Plus,
   Sparkles,
+  SquarePen,
+  Fingerprint,
 } from "lucide-react";
 import { useQueryState, parseAsBoolean } from "nuqs";
 import { StickToBottom, useStickToBottomContext } from "use-stick-to-bottom";
@@ -91,30 +93,6 @@ function ScrollToBottom(props: { className?: string }) {
   );
 }
 
-function OpenGitHubRepo() {
-  return (
-    <TooltipProvider>
-      <Tooltip>
-        <TooltipTrigger asChild>
-          <a
-            href="https://github.com/langchain-ai/agent-chat-ui"
-            target="_blank"
-            className="flex items-center justify-center"
-          >
-            <GitHubSVG
-              width="24"
-              height="24"
-            />
-          </a>
-        </TooltipTrigger>
-        <TooltipContent side="left">
-          <p>Open GitHub repo</p>
-        </TooltipContent>
-      </Tooltip>
-    </TooltipProvider>
-  );
-}
-
 export function Thread() {
   const { branding } = useBranding();
   const [artifactContext, setArtifactContext] = useArtifactContext();
@@ -145,8 +123,13 @@ export function Thread() {
   const isLargeScreen = useMediaQuery("(min-width: 1024px)");
 
   const stream = useStreamContext();
-  const messages = stream.messages;
-  const isLoading = stream.isLoading;
+  const {
+    messages = [],
+    isLoading,
+    setApiKey,
+    apiUrl = "http://localhost:8080",
+  } = stream;
+  const safeMessages = messages ?? [];
 
   const lastError = useRef<string | undefined>(undefined);
 
@@ -164,7 +147,7 @@ export function Thread() {
       return;
     }
     try {
-      const message = (stream.error as any).message;
+      const message = (stream?.error as any)?.message;
       if (!message || lastError.current === message) {
         // Message has already been logged. do not modify ref, return early.
         return;
@@ -186,19 +169,18 @@ export function Thread() {
     }
   }, [stream.error]);
 
-  // TODO: this should be part of the useStream hook
   const prevMessageLength = useRef(0);
   useEffect(() => {
     if (
-      messages.length !== prevMessageLength.current &&
-      messages?.length &&
-      messages[messages.length - 1].type === "ai"
+      safeMessages.length !== prevMessageLength.current &&
+      safeMessages?.length &&
+      safeMessages[safeMessages.length - 1].type === "ai"
     ) {
       setFirstTokenReceived(true);
     }
 
-    prevMessageLength.current = messages.length;
-  }, [messages]);
+    prevMessageLength.current = safeMessages.length;
+  }, [safeMessages]);
 
   const handleSubmit = (e: FormEvent) => {
     e.preventDefault();
@@ -215,7 +197,7 @@ export function Thread() {
       ] as Message["content"],
     };
 
-    const toolMessages = ensureToolCallsHaveResponses(stream.messages);
+    const toolMessages = ensureToolCallsHaveResponses(safeMessages);
 
     const context =
       Object.keys(artifactContext).length > 0 ? artifactContext : undefined;
@@ -227,10 +209,10 @@ export function Thread() {
         streamSubgraphs: true,
         streamResumable: true,
         optimisticValues: (prev: any) => ({
-          ...prev,
+          ...(prev || {}),
           context,
           messages: [
-            ...(prev.messages ?? []),
+            ...((prev?.messages || [])),
             ...toolMessages,
             newHumanMessage,
           ],
@@ -242,10 +224,37 @@ export function Thread() {
     setContentBlocks([]);
   };
 
+  const handleAuth = async () => {
+    try {
+      toast.info("Authenticating...");
+      const res = await fetch(`${apiUrl}/auth/token`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          customer_id: "daikin",
+          project_id: "demo-web-01",
+          role: "admin",
+        }),
+      });
+
+      if (res.ok) {
+        const data = await res.json();
+        if (data.access_token) {
+          setApiKey(data.access_token);
+          toast.success("Authenticated as Daikin Admin");
+        }
+      } else {
+        const error = await res.text();
+        toast.error("Authentication failed: " + error);
+      }
+    } catch (e) {
+      toast.error("Auth error: " + (e as Error).message);
+    }
+  };
+
   const handleRegenerate = (
     parentCheckpoint: Checkpoint | null | undefined,
   ) => {
-    // Do this so the loading state is correct
     prevMessageLength.current = prevMessageLength.current - 1;
     setFirstTokenReceived(false);
     (stream as any).submit(undefined, {
@@ -256,8 +265,8 @@ export function Thread() {
     });
   };
 
-  const chatStarted = !!threadId || !!messages.length;
-  const hasNoAIOrToolMessages = !messages.find(
+  const chatStarted = !!threadId || !!safeMessages.length;
+  const hasNoAIOrToolMessages = !safeMessages.find(
     (m) => m.type === "ai" || m.type === "tool",
   );
 
@@ -336,6 +345,15 @@ export function Thread() {
                 <TooltipIconButton
                   size="lg"
                   className="p-4"
+                  tooltip="Manual Auth"
+                  variant="ghost"
+                  onClick={handleAuth}
+                >
+                  <Fingerprint className="size-5" />
+                </TooltipIconButton>
+                <TooltipIconButton
+                  size="lg"
+                  className="p-4"
                   tooltip="What's New"
                   variant="ghost"
                   onClick={() => setReleaseNotesOpen(true)}
@@ -393,6 +411,15 @@ export function Thread() {
                 <TooltipIconButton
                   size="lg"
                   className="p-4"
+                  tooltip="Manual Auth"
+                  variant="ghost"
+                  onClick={handleAuth}
+                >
+                  <Fingerprint className="size-5" />
+                </TooltipIconButton>
+                <TooltipIconButton
+                  size="lg"
+                  className="p-4"
                   tooltip="What's New"
                   variant="ghost"
                   onClick={() => setReleaseNotesOpen(true)}
@@ -424,10 +451,10 @@ export function Thread() {
               contentClassName="pt-8 pb-16 max-w-3xl mx-auto flex flex-col gap-4 w-full"
               content={
                 <>
-                  {messages
+                  {safeMessages
                     .filter((m) => {
                       return (
-                        !m.id?.startsWith(DO_NOT_RENDER_ID_PREFIX) &&
+                        m?.id && !m.id.startsWith(DO_NOT_RENDER_ID_PREFIX) &&
                         (m as any).type !== "ui" &&
                         m.type !== "tool"
                       );
@@ -448,8 +475,6 @@ export function Thread() {
                         />
                       ),
                     )}
-                  {/* Special rendering case where there are no AI/tool messages, but there is an interrupt.
-                    We need to render it outside of the messages list, since there are no messages to render */}
                   {hasNoAIOrToolMessages && !!stream.interrupt && (
                     <AssistantMessage
                       key="interrupt-msg"
@@ -547,7 +572,7 @@ export function Thread() {
                           accept="image/jpeg,image/png,image/gif,image/webp,application/pdf"
                           className="hidden"
                         />
-                        {stream.isLoading ? (
+                        {isLoading ? (
                           <Button
                             key="stop"
                             onClick={() => stream.stop()}

@@ -132,9 +132,11 @@ export function AssistantMessage({
   );
 
   const thread = useStreamContext();
+  const threadMessages = thread.messages ?? [];
   const isLastMessage =
-    thread.messages[thread.messages.length - 1].id === message?.id;
-  const hasNoAIOrToolMessages = !thread.messages.find(
+    threadMessages.length > 0 &&
+    threadMessages[threadMessages.length - 1]?.id === message?.id;
+  const hasNoAIOrToolMessages = !threadMessages.find(
     (m) => m.type === "ai" || m.type === "tool",
   );
   const meta = message ? thread.getMessagesMetadata(message) : undefined;
