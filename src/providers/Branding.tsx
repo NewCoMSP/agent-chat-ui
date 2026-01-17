@@ -12,7 +12,7 @@ const BrandingContext = createContext<BrandingContextType | undefined>(undefined
 
 export function BrandingProvider({
     children,
-    client = process.env.NEXT_PUBLIC_CLIENT_NAME || "daikin", // Force daikin as default for demo
+    client = process.env.NEXT_PUBLIC_CLIENT_NAME,
 }: {
     children: React.ReactNode;
     client?: string;
