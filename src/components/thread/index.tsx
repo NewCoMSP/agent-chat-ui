@@ -26,6 +26,7 @@ import {
   Sparkles,
   SquarePen,
   Fingerprint,
+  LayoutDashboard,
 } from "lucide-react";
 import { useQueryState, parseAsBoolean } from "nuqs";
 import { StickToBottom, useStickToBottomContext } from "use-stick-to-bottom";
@@ -321,6 +322,15 @@ export function Thread() {
                 <TooltipIconButton
                   size="lg"
                   className="p-4"
+                  tooltip="Open Workbench"
+                  variant="ghost"
+                  onClick={() => window.location.href = "/workbench/map"}
+                >
+                  <LayoutDashboard className="size-5" />
+                </TooltipIconButton>
+                <TooltipIconButton
+                  size="lg"
+                  className="p-4"
                   tooltip="What's New"
                   variant="ghost"
                   onClick={() => setReleaseNotesOpen(true)}
@@ -376,6 +386,15 @@ export function Thread() {
                   <ThemeToggle />
                 </div>
                 <UserMenu />
+                <TooltipIconButton
+                  size="lg"
+                  className="p-4"
+                  tooltip="Open Workbench"
+                  variant="ghost"
+                  onClick={() => window.location.href = "/workbench/map"}
+                >
+                  <LayoutDashboard className="size-5" />
+                </TooltipIconButton>
                 <TooltipIconButton
                   size="lg"
                   className="p-4"
