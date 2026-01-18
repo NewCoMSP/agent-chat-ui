@@ -11,6 +11,22 @@ export interface UserConfig {
 // In a real app, this would be a database lookup
 export const USER_REGISTRY: Record<string, UserConfig> = {
     // Admin User
+    // Admin Users
+    "ben.adrian.coleman@gmail.com": {
+        customerId: "reflexion-org",
+        projectId: "demo-project",
+        role: "reflexion_admin"
+    },
+    "khurana.h@gmail.com": {
+        customerId: "reflexion-org",
+        projectId: "demo-project",
+        role: "reflexion_admin"
+    },
+    "soumitri.kolavennu@gmail.com": {
+        customerId: "reflexion-org",
+        projectId: "demo-project",
+        role: "reflexion_admin"
+    },
     "ben@example.com": {
         customerId: "daikin",
         projectId: "demo-identity-proj-001",

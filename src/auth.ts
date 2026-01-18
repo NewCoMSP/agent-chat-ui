@@ -42,8 +42,16 @@ export const authOptions: NextAuthOptions = {
                 let config = getUserConfig(userEmail);
 
                 try {
-                    const backendUrl = process.env.LANGGRAPH_API_URL || "http://localhost:8080";
-                    const resp = await fetch(`${backendUrl}/auth/profile?email=${userEmail}`);
+                    let backendUrl = process.env.LANGGRAPH_API_URL || "http://localhost:8080";
+                    // Remove trailing slash if present
+                    if (backendUrl.endsWith("/")) {
+                        backendUrl = backendUrl.slice(0, -1);
+                    }
+
+                    const profileUrl = `${backendUrl}/auth/profile?email=${userEmail}`;
+                    console.log(`[AUTH] Fetching profile from: ${profileUrl}`);
+
+                    const resp = await fetch(profileUrl);
                     if (resp.ok) {
                         const profile = await resp.json();
                         config = {
