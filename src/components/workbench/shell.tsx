@@ -1,5 +1,6 @@
 "use client";
 
+import { Suspense } from "react";
 import { Sidebar } from "./sidebar";
 import { UserMenu } from "@/components/thread/user-menu";
 import { Breadcrumbs } from "./breadcrumbs";
@@ -15,7 +16,9 @@ export function WorkbenchShell({ children }: { children: React.ReactNode }) {
                 {/* Top Header */}
                 <header className="h-14 border-b flex items-center justify-between px-6 bg-background/50 backdrop-blur-md z-20">
                     <div className="flex items-center gap-4">
-                        <Breadcrumbs />
+                        <Suspense fallback={<div className="h-4 w-24 bg-muted animate-pulse rounded" />}>
+                            <Breadcrumbs />
+                        </Suspense>
                     </div>
                     <div className="flex items-center gap-4">
                         {/* Placeholder for project context context selector later */}

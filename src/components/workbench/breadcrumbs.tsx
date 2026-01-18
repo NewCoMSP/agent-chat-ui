@@ -1,12 +1,11 @@
 "use client";
 
 import Link from "next/link";
-import { usePathname, useSearchParams } from "next/navigation";
+import { usePathname } from "next/navigation";
 import { ChevronRight, Home } from "lucide-react";
 
 export function Breadcrumbs() {
     const pathname = usePathname();
-    const searchParams = useSearchParams();
 
     // Simple breadcrumb logic based on path
     const pathParts = pathname.split("/").filter(Boolean);
