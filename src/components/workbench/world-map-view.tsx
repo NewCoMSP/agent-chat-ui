@@ -2,8 +2,11 @@
 
 import React, { useEffect, useRef, useState } from 'react';
 import * as d3 from 'd3';
-import { Search, RefreshCw, ZoomIn, ZoomOut, Maximize } from 'lucide-react';
+import { Search, RefreshCw, ZoomIn, ZoomOut, Maximize, Activity, Globe, GitGraph } from 'lucide-react';
 import { Button as UIButton } from '@/components/ui/button';
+import { useStreamContext } from '@/providers/Stream';
+import { useQueryState } from 'nuqs';
+import { cn } from '@/lib/utils';
 
 interface Node extends d3.SimulationNodeDatum {
     id: string;
@@ -39,12 +42,25 @@ const typeConfig: Record<string, { color: string; label: string }> = {
 };
 
 export function WorldMapView() {
+    const stream = useStreamContext();
+    const [viewMode, setViewMode] = useQueryState("view", { defaultValue: "map" });
+    const visualizationHtml = (stream as any)?.values?.visualization_html;
+
     const svgRef = useRef<SVGSVGElement>(null);
     const containerRef = useRef<HTMLDivElement>(null);
     const [data, setData] = useState<GraphData | null>(null);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
     const [selectedNode, setSelectedNode] = useState<Node | null>(null);
+    const [threadId] = useQueryState("threadId");
+
+    // Auto-toggle to workflow when a new visualization arrives
+    useEffect(() => {
+        if (visualizationHtml && viewMode !== 'workflow') {
+            const timer = setTimeout(() => setViewMode('workflow'), 500);
+            return () => clearTimeout(timer);
+        }
+    }, [visualizationHtml]);
 
     const fetchData = async () => {
         try {
@@ -57,7 +73,8 @@ export function WorldMapView() {
                 headers['X-Organization-Context'] = orgContext;
             }
 
-            const res = await fetch('/api/kg-data', { headers });
+            const url = threadId ? `/api/kg-data?thread_id=${threadId}` : '/api/kg-data';
+            const res = await fetch(url, { headers });
             if (!res.ok) throw new Error('Failed to fetch graph data');
             const json = await res.json();
             setData(json);
@@ -71,7 +88,7 @@ export function WorldMapView() {
 
     useEffect(() => {
         fetchData();
-    }, []);
+    }, [threadId]);
 
     useEffect(() => {
         if (!data || !svgRef.current || !containerRef.current) return;
@@ -228,25 +245,80 @@ export function WorldMapView() {
 
             {/* Canvas Area */}
             <div ref={containerRef} className="flex-1 relative overflow-hidden" onClick={() => setSelectedNode(null)}>
-                {loading && !data && (
-                    <div className="absolute inset-0 flex items-center justify-center bg-[#050505] z-30">
-                        <div className="text-center">
-                            <div className="h-8 w-8 border-2 border-primary border-t-transparent rounded-full animate-spin mx-auto mb-4" />
-                            <p className="text-xs text-muted-foreground">Initializing Knowledge Graph...</p>
+                {viewMode === 'workflow' ? (
+                    <div className="absolute inset-0 flex flex-col bg-[#0a0a0a]">
+                        {!visualizationHtml ? (
+                            <div className="flex-1 flex flex-col items-center justify-center text-zinc-500 gap-4">
+                                <Activity className="w-12 h-12 opacity-20" />
+                                <div className="text-center">
+                                    <h3 className="text-sm font-medium text-zinc-300">No active orientation</h3>
+                                    <p className="text-xs text-zinc-600 mt-1 max-w-[200px]">Ask the agent to "show orientation" to see the project workflow here.</p>
+                                </div>
+                                <UIButton
+                                    variant="outline"
+                                    size="sm"
+                                    className="mt-4 border-zinc-800 text-xs"
+                                    onClick={() => setViewMode('map')}
+                                >
+                                    Switch to Map View
+                                </UIButton>
+                            </div>
+                        ) : (
+                            <iframe
+                                srcDoc={`
+                                    <html>
+                                        <head>
+                                            <style>
+                                                body { margin: 0; background: #0a0a0a; color: white; font-family: sans-serif; height: 100vh; display: flex; align-items: center; justify-content: center; overflow: hidden; }
+                                                /* Override mermaid colors if possible via CSS if the html contains it, or trust the generated HTML */
+                                            </style>
+                                        </head>
+                                        <body>
+                                            ${visualizationHtml}
+                                        </body>
+                                    </html>
+                                `}
+                                className="w-full h-full border-none shadow-2xl"
+                                title="Workflow Orientation"
+                            />
+                        )}
+                        <div className="absolute bottom-6 left-6 z-20">
+                            <div className="flex items-center gap-2 px-3 py-1.5 bg-zinc-900/80 backdrop-blur-md border border-zinc-800 rounded-full shadow-lg">
+                                <GitGraph className="w-3.5 h-3.5 text-zinc-400" />
+                                <span className="text-[10px] font-bold text-zinc-400 uppercase tracking-widest">Workflow State Mode</span>
+                            </div>
                         </div>
                     </div>
-                )}
+                ) : (
+                    <>
+                        {loading && !data && (
+                            <div className="absolute inset-0 flex items-center justify-center bg-[#050505] z-30">
+                                <div className="text-center">
+                                    <div className="h-8 w-8 border-2 border-primary border-t-transparent rounded-full animate-spin mx-auto mb-4" />
+                                    <p className="text-xs text-muted-foreground">Initializing Knowledge Graph...</p>
+                                </div>
+                            </div>
+                        )}
 
-                {error && (
-                    <div className="absolute inset-0 flex items-center justify-center bg-[#050505] z-30 p-6 text-center">
-                        <div>
-                            <p className="text-red-500 mb-4 font-mono text-sm leading-relaxed max-w-md mx-auto">Error: {error}</p>
-                            <UIButton onClick={fetchData} variant="outline" className="border-zinc-800">Retry Connection</UIButton>
+                        {error && (
+                            <div className="absolute inset-0 flex items-center justify-center bg-[#050505] z-30 p-6 text-center">
+                                <div>
+                                    <p className="text-red-500 mb-4 font-mono text-sm leading-relaxed max-w-md mx-auto">Error: {error}</p>
+                                    <UIButton onClick={fetchData} variant="outline" className="border-zinc-800">Retry Connection</UIButton>
+                                </div>
+                            </div>
+                        )}
+
+                        <svg ref={svgRef} className="h-full w-full cursor-grab active:cursor-grabbing" />
+
+                        <div className="absolute bottom-6 left-6 z-20">
+                            <div className="flex items-center gap-2 px-3 py-1.5 bg-zinc-900/80 backdrop-blur-md border border-zinc-800 rounded-full shadow-lg">
+                                <Globe className="w-3.5 h-3.5 text-zinc-400" />
+                                <span className="text-[10px] font-bold text-zinc-400 uppercase tracking-widest">Knowledge Graph Mode</span>
+                            </div>
                         </div>
-                    </div>
+                    </>
                 )}
-
-                <svg ref={svgRef} className="h-full w-full cursor-grab active:cursor-grabbing" />
 
                 {/* Selected Node Details */}
                 {selectedNode && (

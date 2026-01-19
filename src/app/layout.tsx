@@ -19,6 +19,11 @@ export const metadata: Metadata = {
 
 import { BrandingProvider } from "@/providers/Branding";
 import { NextAuthProvider } from "@/providers/NextAuthProvider";
+import { ThreadProvider } from "@/providers/Thread";
+import { StreamProvider } from "@/providers/Stream";
+import { ArtifactProvider } from "@/components/thread/artifact";
+import { ErrorBoundary } from "@/components/error-boundary";
+import { Toaster } from "@/components/ui/sonner";
 
 export default function RootLayout({
   children,
@@ -33,7 +38,16 @@ export default function RootLayout({
             <BrandingProvider>
               <NuqsAdapter>
                 <TooltipProvider>
-                  {children}
+                  <Toaster />
+                  <ErrorBoundary>
+                    <ThreadProvider>
+                      <StreamProvider>
+                        <ArtifactProvider>
+                          {children}
+                        </ArtifactProvider>
+                      </StreamProvider>
+                    </ThreadProvider>
+                  </ErrorBoundary>
                 </TooltipProvider>
               </NuqsAdapter>
             </BrandingProvider>

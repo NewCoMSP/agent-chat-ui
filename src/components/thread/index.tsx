@@ -95,7 +95,13 @@ function ScrollToBottom(props: { className?: string }) {
   );
 }
 
-export function Thread() {
+interface ThreadProps {
+  embedded?: boolean;
+  className?: string;
+  hideArtifacts?: boolean;
+}
+
+export function Thread({ embedded, className, hideArtifacts }: ThreadProps = {}) {
   const { branding } = useBranding();
   const [artifactContext, setArtifactContext] = useArtifactContext();
   const [artifactOpen, closeArtifact] = useArtifactOpen();
@@ -247,7 +253,11 @@ export function Thread() {
   );
 
   return (
-    <div className="flex h-screen w-full overflow-hidden">
+    <div className={cn(
+      "flex w-full overflow-hidden",
+      embedded ? "h-full" : "h-screen",
+      className
+    )}>
       <div className="relative hidden lg:flex">
         <motion.div
           className="absolute z-20 h-full overflow-hidden border-r bg-background"
@@ -579,20 +589,22 @@ export function Thread() {
             />
           </StickToBottom>
         </motion.div>
-        <div className="relative flex flex-col border-l">
-          <div className="absolute inset-0 flex min-w-[30vw] flex-col">
-            <div className="grid grid-cols-[1fr_auto] border-b p-4">
-              <ArtifactTitle className="truncate overflow-hidden" />
-              <button
-                onClick={closeArtifact}
-                className="cursor-pointer"
-              >
-                <XIcon className="size-5" />
-              </button>
+        {(!embedded && !hideArtifacts) && (
+          <div className="relative flex flex-col border-l">
+            <div className="absolute inset-0 flex min-w-[30vw] flex-col">
+              <div className="grid grid-cols-[1fr_auto] border-b p-4">
+                <ArtifactTitle className="truncate overflow-hidden" />
+                <button
+                  onClick={closeArtifact}
+                  className="cursor-pointer"
+                >
+                  <XIcon className="size-5" />
+                </button>
+              </div>
+              <ArtifactContent className="relative flex-grow" />
             </div>
-            <ArtifactContent className="relative flex-grow" />
           </div>
-        </div>
+        )}
       </div>
       <ProductPanel open={releaseNotesOpen} onClose={() => setReleaseNotesOpen(false)} />
     </div>

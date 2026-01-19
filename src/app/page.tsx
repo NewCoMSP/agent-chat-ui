@@ -39,16 +39,7 @@ export default function DemoPage(): React.ReactNode {
 
   return (
     <React.Suspense fallback={<div>Loading (layout)...</div>}>
-      <Toaster />
-      <ErrorBoundary>
-        <ThreadProvider>
-          <StreamProvider>
-            <ArtifactProvider>
-              <Thread />
-            </ArtifactProvider>
-          </StreamProvider>
-        </ThreadProvider>
-      </ErrorBoundary>
+      <Thread />
     </React.Suspense>
   );
 }
