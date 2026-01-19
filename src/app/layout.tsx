@@ -36,8 +36,8 @@ export default function RootLayout({
         <ThemeProvider attribute="class" defaultTheme="light" enableSystem>
           <NextAuthProvider>
             <BrandingProvider>
-              <NuqsAdapter>
-                <React.Suspense fallback={<></>}>
+              <React.Suspense fallback={<></>}>
+                <NuqsAdapter>
                   <TooltipProvider>
                     <Toaster />
                     <ErrorBoundary>
@@ -50,8 +50,8 @@ export default function RootLayout({
                       </ThreadProvider>
                     </ErrorBoundary>
                   </TooltipProvider>
-                </React.Suspense>
-              </NuqsAdapter>
+                </NuqsAdapter>
+              </React.Suspense>
             </BrandingProvider>
           </NextAuthProvider>
         </ThemeProvider>
