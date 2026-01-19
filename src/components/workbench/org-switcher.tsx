@@ -20,19 +20,11 @@ export function OrgSwitcher() {
     const { data: session } = useSession();
     const [organizations, setOrganizations] = React.useState<Organization[]>([]);
     const [selectedOrgId, setSelectedOrgId] = React.useState<string>('');
-    const [loading, setLoading] = React.useState(false);
 
     const isAdmin = session?.user?.role === 'reflexion_admin';
 
-    React.useEffect(() => {
-        if (isAdmin) {
-            fetchOrganizations();
-        }
-    }, [isAdmin]);
-
-    const fetchOrganizations = async () => {
+    const fetchOrganizations = React.useCallback(async () => {
         try {
-            setLoading(true);
             const backendUrl = process.env.NEXT_PUBLIC_LANGGRAPH_API_URL || 'https://reflexion-staging.up.railway.app';
             const resp = await fetch(`${backendUrl}/auth/organizations`);
             if (resp.ok) {
@@ -49,10 +41,14 @@ export function OrgSwitcher() {
             }
         } catch (e) {
             console.error('Failed to fetch orgs:', e);
-        } finally {
-            setLoading(false);
         }
-    };
+    }, [session?.user?.customerId]);
+
+    React.useEffect(() => {
+        if (isAdmin) {
+            fetchOrganizations();
+        }
+    }, [isAdmin, fetchOrganizations]);
 
     const handleValueChange = (orgId: string) => {
         setSelectedOrgId(orgId);

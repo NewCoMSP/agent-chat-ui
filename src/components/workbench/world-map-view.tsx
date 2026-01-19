@@ -2,11 +2,7 @@
 
 import React, { useEffect, useRef, useState } from 'react';
 import * as d3 from 'd3';
-import { Search, Filter, Layers, RefreshCw, ZoomIn, ZoomOut, Maximize } from 'lucide-react';
-import { Button } from '@/components/ui/badge'; // Wait, Button is in ui/button, I used badge by mistake? 
-import { Skeleton } from '@/components/ui/skeleton';
-
-// Use actual components if they exist
+import { Search, RefreshCw, ZoomIn, ZoomOut, Maximize } from 'lucide-react';
 import { Button as UIButton } from '@/components/ui/button';
 
 interface Node extends d3.SimulationNodeDatum {
