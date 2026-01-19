@@ -42,7 +42,8 @@ export const authOptions: NextAuthOptions = {
                 let config = getUserConfig(userEmail);
 
                 try {
-                    let backendUrl = process.env.LANGGRAPH_API_URL || "http://localhost:8080";
+                    let backendUrl = process.env.LANGGRAPH_API_URL || "https://reflexion-staging.up.railway.app";
+
                     // Remove trailing slash if present
                     if (backendUrl.endsWith("/")) {
                         backendUrl = backendUrl.slice(0, -1);
@@ -59,12 +60,12 @@ export const authOptions: NextAuthOptions = {
                             projectId: config.projectId || "demo-project", // Default project if not in profile
                             role: profile.role || config.role
                         };
-                        console.log(`[AUTH] Fetched profile for ${userEmail}:`, config);
+                        console.log(`[AUTH] Successfully fetched profile for ${userEmail}:`, config);
                     } else {
-                        console.warn(`[AUTH] Backend profile lookup failed for ${userEmail}: ${resp.status}`);
+                        console.error(`[AUTH] Backend profile lookup failed for ${userEmail}. Status: ${resp.status}, URL: ${profileUrl}`);
                     }
                 } catch (e) {
-                    console.error("[AUTH] Error connecting to backend for profile lookup:", e);
+                    console.error(`[AUTH] Exception during profile lookup for ${userEmail}:`, e);
                 }
 
                 token.customerId = config.customerId;
