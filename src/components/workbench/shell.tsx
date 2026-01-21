@@ -38,7 +38,7 @@ export function WorkbenchShell({ children }: { children: React.ReactNode }) {
     const [releaseNotesOpen, setReleaseNotesOpen] = useState(false);
     const router = useRouter();
 
-    // Agent-Driven View Synchronization
+    // Agent-Driven View Synchronization (Backend -> UI)
     const workbenchView = (stream as any)?.values?.workbench_view;
     const lastSyncedView = useRef<string | undefined>(undefined);
 
@@ -48,7 +48,7 @@ export function WorkbenchShell({ children }: { children: React.ReactNode }) {
         // Only sync if the backend specifically changed its requested view
         // effectively treating it as an event rather than a state enforcement
         if (workbenchView !== lastSyncedView.current) {
-            console.log(`[WorkbenchShell] Syncing view to: ${workbenchView}`);
+            console.log(`[WorkbenchShell] Backend synced view to: ${workbenchView}`);
             lastSyncedView.current = workbenchView;
 
             if (["map", "workflow", "artifacts"].includes(workbenchView)) {
@@ -68,6 +68,20 @@ export function WorkbenchShell({ children }: { children: React.ReactNode }) {
             }
         }
     }, [workbenchView, setViewMode, closeArtifact, router]);
+
+    // User-Driven View Synchronization (UI -> Backend)
+    useEffect(() => {
+        if (!viewMode) return;
+
+        // Detect manual user-initiated view changes (including URL updates)
+        if (viewMode !== lastSyncedView.current) {
+            console.log(`[WorkbenchShell] User-initiated view change to: ${viewMode}`);
+            lastSyncedView.current = viewMode;
+            stream.setWorkbenchView(viewMode as any).catch(e => {
+                console.warn("[WorkbenchShell] Failed to sync view to backend:", e);
+            });
+        }
+    }, [viewMode, stream]);
 
     return (
         <div className="flex h-screen bg-background text-foreground overflow-hidden">
