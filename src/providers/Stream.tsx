@@ -29,6 +29,7 @@ import { useThreads } from "./Thread";
 import { toast } from "sonner";
 import { useBranding } from "./Branding";
 import { useSession } from "next-auth/react";
+import { createClient } from "./client";
 
 export type StateType = {
   messages: Message[];
@@ -69,6 +70,7 @@ type StreamContextType = UseStream<StateType, {
   CustomEventType: UIMessage | RemoveUIMessage;
 }> & {
   setApiKey: (key: string) => void;
+  setWorkbenchView: (view: "map" | "workflow" | "artifacts" | "discovery" | "settings") => Promise<void>;
   apiUrl: string;
 };
 const StreamContext = createContext<StreamContextType | undefined>(undefined);
@@ -162,6 +164,24 @@ const StreamSession = ({
     }
   }, [rawStream.values]);
 
+  // Method to update the backend state with the current view
+  const setWorkbenchView = async (view: "map" | "workflow" | "artifacts" | "discovery" | "settings") => {
+    if (!threadId || !apiUrl) return;
+
+    console.log(`[Stream] Updating active view to: ${view}`);
+    try {
+      const headers: Record<string, string> = {};
+      if (orgContext) headers['X-Organization-Context'] = orgContext;
+
+      const client = createClient(apiUrl, apiKey ?? undefined, headers);
+      await client.threads.updateState(threadId, {
+        values: { workbench_view: view }
+      });
+    } catch (e) {
+      console.error("[Stream] Failed to update workbench view:", e);
+    }
+  };
+
   // Dynamic Proxy Wrapper
   // This ensure ANY access to the context always gets the latest hook state 
   // but with forced null-safety for problematic fields.
@@ -171,6 +191,7 @@ const StreamSession = ({
         // Direct property overrides from Provider state
         if (prop === "setApiKey") return setApiKey;
         if (prop === "apiUrl") return apiUrl;
+        if (prop === "setWorkbenchView") return setWorkbenchView;
 
         // Safety check: if rawStream itself is null, provide safe defaults
         if (!rawStream) {
@@ -198,7 +219,7 @@ const StreamSession = ({
         return value;
       }
     });
-  }, [rawStream, apiKey, apiUrl]);
+  }, [rawStream, apiKey, apiUrl, threadId, orgContext]);
 
   useEffect(() => {
     checkGraphStatus(apiUrl, apiKey).then((ok) => {

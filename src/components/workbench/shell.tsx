@@ -194,7 +194,7 @@ export function WorkbenchShell({ children }: { children: React.ReactNode }) {
                                             "h-8 px-3 gap-2 text-xs font-medium transition-all",
                                             viewMode === "map" ? "bg-background text-foreground shadow-sm ring-1 ring-border" : "text-muted-foreground hover:bg-muted/50 hover:text-foreground"
                                         )}
-                                        onClick={() => { setViewMode("map"); closeArtifact(); }}
+                                        onClick={() => { setViewMode("map"); closeArtifact(); stream.setWorkbenchView("map"); }}
                                     >
                                         <MapIcon className="w-3.5 h-3.5" />
                                         Map
@@ -206,7 +206,7 @@ export function WorkbenchShell({ children }: { children: React.ReactNode }) {
                                             "h-8 px-3 gap-2 text-xs font-medium transition-all",
                                             viewMode === "workflow" ? "bg-background text-foreground shadow-sm ring-1 ring-border" : "text-muted-foreground hover:bg-muted/50 hover:text-foreground"
                                         )}
-                                        onClick={() => { setViewMode("workflow"); closeArtifact(); }}
+                                        onClick={() => { setViewMode("workflow"); closeArtifact(); stream.setWorkbenchView("workflow"); }}
                                     >
                                         <Workflow className="w-3.5 h-3.5" />
                                         Workflow
@@ -218,7 +218,7 @@ export function WorkbenchShell({ children }: { children: React.ReactNode }) {
                                             "h-8 px-3 gap-2 text-xs font-medium transition-all",
                                             viewMode === "artifacts" ? "bg-background text-foreground shadow-sm ring-1 ring-border" : "text-muted-foreground hover:bg-muted/50 hover:text-foreground"
                                         )}
-                                        onClick={() => { setViewMode("artifacts"); closeArtifact(); }}
+                                        onClick={() => { setViewMode("artifacts"); closeArtifact(); stream.setWorkbenchView("artifacts"); }}
                                     >
                                         <FileText className="w-3.5 h-3.5" />
                                         Artifacts
