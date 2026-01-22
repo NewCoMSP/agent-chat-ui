@@ -1,7 +1,8 @@
 "use client";
 
 import React from "react";
-import { Settings, Shield, User, Globe, Activity } from "lucide-react";
+import { Settings, Shield, User, Globe, Activity, Building2 } from "lucide-react";
+import { OrganizationManagement } from "@/components/workbench/organization-management";
 
 export default function SettingsPage() {
     return (
@@ -20,6 +21,16 @@ export default function SettingsPage() {
                 </div>
 
                 <div className="space-y-6">
+                    <section className="space-y-4">
+                        <h3 className="text-sm font-bold uppercase tracking-widest text-muted-foreground/60 flex items-center gap-2">
+                            <Building2 className="w-3.5 h-3.5" />
+                            Organization Management
+                        </h3>
+                        <div className="p-6 rounded-xl border border-border bg-muted/10">
+                            <OrganizationManagement />
+                        </div>
+                    </section>
+
                     <section className="space-y-4">
                         <h3 className="text-sm font-bold uppercase tracking-widest text-muted-foreground/60 flex items-center gap-2">
                             <User className="w-3.5 h-3.5" />

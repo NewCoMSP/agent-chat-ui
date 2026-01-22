@@ -8,7 +8,10 @@ function getBackendUrl(): string {
     return backendUrl;
 }
 
-export async function GET() {
+export async function PUT(
+    req: Request,
+    { params }: { params: Promise<{ orgId: string }> }
+) {
     try {
         const session = await getServerSession(authOptions);
 
@@ -16,43 +19,12 @@ export async function GET() {
             return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
         }
 
-        const targetUrl = `${getBackendUrl()}/auth/organizations`;
-
-        const resp = await fetch(targetUrl, {
-            headers: {
-                "Authorization": `Bearer ${session.user.idToken}`,
-                "Content-Type": "application/json",
-            }
-        });
-
-        if (!resp.ok) {
-            const errorText = await resp.text();
-            console.error(`[PROXY] Backend error (orgs): ${resp.status} - ${errorText}`);
-            return NextResponse.json({ error: "Backend error" }, { status: resp.status });
-        }
-
-        const data = await resp.json();
-        return NextResponse.json(data);
-
-    } catch (error: any) {
-        console.error("[PROXY] Organizations fetch failed:", error);
-        return NextResponse.json({ error: "Internal Server Error" }, { status: 500 });
-    }
-}
-
-export async function POST(req: Request) {
-    try {
-        const session = await getServerSession(authOptions);
-
-        if (!session || !session.user) {
-            return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-        }
-
+        const { orgId } = await params;
         const body = await req.json();
-        const targetUrl = `${getBackendUrl()}/auth/organizations`;
+        const targetUrl = `${getBackendUrl()}/auth/organizations/${orgId}`;
 
         const resp = await fetch(targetUrl, {
-            method: "POST",
+            method: "PUT",
             headers: {
                 "Authorization": `Bearer ${session.user.idToken}`,
                 "Content-Type": "application/json",
@@ -62,7 +34,7 @@ export async function POST(req: Request) {
 
         if (!resp.ok) {
             const errorText = await resp.text();
-            console.error(`[PROXY] Backend error (create org): ${resp.status} - ${errorText}`);
+            console.error(`[PROXY] Backend error (update org): ${resp.status} - ${errorText}`);
             return NextResponse.json({ error: errorText || "Backend error" }, { status: resp.status });
         }
 
@@ -70,7 +42,44 @@ export async function POST(req: Request) {
         return NextResponse.json(data);
 
     } catch (error: any) {
-        console.error("[PROXY] Organization creation failed:", error);
+        console.error("[PROXY] Organization update failed:", error);
+        return NextResponse.json({ error: "Internal Server Error" }, { status: 500 });
+    }
+}
+
+export async function DELETE(
+    req: Request,
+    { params }: { params: Promise<{ orgId: string }> }
+) {
+    try {
+        const session = await getServerSession(authOptions);
+
+        if (!session || !session.user) {
+            return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+        }
+
+        const { orgId } = await params;
+        const targetUrl = `${getBackendUrl()}/auth/organizations/${orgId}`;
+
+        const resp = await fetch(targetUrl, {
+            method: "DELETE",
+            headers: {
+                "Authorization": `Bearer ${session.user.idToken}`,
+                "Content-Type": "application/json",
+            },
+        });
+
+        if (!resp.ok) {
+            const errorText = await resp.text();
+            console.error(`[PROXY] Backend error (delete org): ${resp.status} - ${errorText}`);
+            return NextResponse.json({ error: errorText || "Backend error" }, { status: resp.status });
+        }
+
+        const data = await resp.json();
+        return NextResponse.json(data);
+
+    } catch (error: any) {
+        console.error("[PROXY] Organization deletion failed:", error);
         return NextResponse.json({ error: "Internal Server Error" }, { status: 500 });
     }
 }

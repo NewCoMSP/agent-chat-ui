@@ -13,7 +13,11 @@ const inter = Inter({
 });
 
 export const metadata: Metadata = {
-  title: process.env.NEXT_PUBLIC_CLIENT_NAME === "daikin" ? "Reflexion | Daikin" : "Reflexion Agent",
+  title: process.env.NEXT_PUBLIC_CLIENT_NAME === "daikin" 
+    ? "Reflexion | Daikin" 
+    : process.env.NEXT_PUBLIC_CLIENT_NAME === "umn-morris"
+    ? "Reflexion | UMN Morris"
+    : "Reflexion Agent",
   description: "Advanced Agentic Coding Environment",
 };
 

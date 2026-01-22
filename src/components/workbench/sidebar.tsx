@@ -26,6 +26,7 @@ interface Project {
 const PRODUCT_LINKS = [
     { name: "Smart Backlog", href: "/workbench/backlog", icon: CheckSquare },
     { name: "Discovery", href: "/workbench/discovery", icon: Search },
+    { name: "Settings", href: "/workbench/settings", icon: Settings },
 ];
 
 export function Sidebar() {
@@ -156,20 +157,6 @@ export function Sidebar() {
                     </div>
                 )}
             </nav>
-
-            {/* Bottom Footer Section */}
-            <div className="p-4 mt-auto border-t bg-muted/10">
-                <Link
-                    href="/workbench/settings"
-                    className={cn(
-                        "group flex items-center rounded-md px-3 py-2 text-sm font-medium transition-all hover:bg-accent/50 hover:text-foreground text-muted-foreground",
-                        pathname === "/workbench/settings" ? "bg-primary/10 text-primary shadow-sm" : ""
-                    )}
-                >
-                    <Settings className="mr-3 h-4 w-4 transition-transform group-hover:rotate-45" />
-                    Settings
-                </Link>
-            </div>
         </aside>
     );
 }
