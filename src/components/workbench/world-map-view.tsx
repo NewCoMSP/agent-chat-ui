@@ -2,7 +2,7 @@
 
 import React, { useEffect, useRef, useState } from 'react';
 import * as d3 from 'd3';
-import { Search, RefreshCw, ZoomIn, ZoomOut, Maximize, Activity, Globe, GitGraph, FileText } from 'lucide-react';
+import { Search, RefreshCw, ZoomIn, ZoomOut, Maximize, Activity, Globe, GitGraph, FileText, GitCompare } from 'lucide-react';
 import { Button as UIButton } from '@/components/ui/button';
 import { useStreamContext } from '@/providers/Stream';
 import { useQueryState } from 'nuqs';
@@ -15,6 +15,7 @@ interface Node extends d3.SimulationNodeDatum {
     is_active?: boolean;
     description?: string;
     properties?: any;
+    diff_status?: 'added' | 'modified' | 'removed';
 }
 
 interface Link extends d3.SimulationLinkDatum<Node> {
@@ -64,6 +65,11 @@ export function WorldMapView() {
     const [showHistory, setShowHistory] = useState(false);
     const [activeVersion, setActiveVersion] = useState<string | null>(null);
     const [inactiveOpacity, setInactiveOpacity] = useState(0.15); // Transparency for inactive nodes (0-1)
+    const [compareMode, setCompareMode] = useState(false);
+    const [compareVersion1, setCompareVersion1] = useState<string | null>(null);
+    const [compareVersion2, setCompareVersion2] = useState<string | null>(null);
+    const [diffData, setDiffData] = useState<any>(null);
+    const [loadingDiff, setLoadingDiff] = useState(false);
 
     // Auto-toggle to workflow when a new visualization arrives
     useEffect(() => {
@@ -126,7 +132,29 @@ export function WorldMapView() {
         } catch (e) { console.error('History fetch error:', e); }
     };
 
-    const fetchData = async (version?: string) => {
+    const fetchDiff = async (v1: string, v2: string) => {
+        if (!v1 || !v2 || !threadId) return;
+        try {
+            setLoadingDiff(true);
+            const orgContext = localStorage.getItem('reflexion_org_context');
+            const headers: Record<string, string> = {};
+            if (orgContext) headers['X-Organization-Context'] = orgContext;
+            const url = `/api/project/diff?thread_id=${threadId}&version1=${v1}&version2=${v2}`;
+            const res = await fetch(url, { headers });
+            if (res.ok) {
+                const diff = await res.json();
+                setDiffData(diff);
+            } else {
+                console.error('Diff fetch failed:', await res.text());
+            }
+        } catch (e) {
+            console.error('Diff fetch error:', e);
+        } finally {
+            setLoadingDiff(false);
+        }
+    };
+
+    const fetchData = async (version?: string, preserveDiff: boolean = false) => {
         try {
             setLoading(true);
             setError(null);
@@ -159,6 +187,10 @@ export function WorldMapView() {
             // Only update history list if we are loading the latest version, 
             // otherwise we might get a stale list if we time travel back
             if (!version) fetchKgHistory();
+            // Clear diff data unless we're preserving it (e.g., when viewing version 2 with diff)
+            if (!preserveDiff && !compareMode) {
+                setDiffData(null);
+            }
         } catch (err: any) {
             console.error('[WorldMapView] Fetch error:', err);
             setError(err.message);
@@ -207,6 +239,17 @@ export function WorldMapView() {
         // With current transparency model, we might still want to show all but ghosted
         const nodes = data.nodes.map(d => ({ ...d }));
         const links = data.links.map(d => ({ ...d }));
+        
+        // If we have diff data, merge it into nodes for visualization
+        if (diffData && diffData.diff) {
+            const diffNodesById = new Map(diffData.diff.nodes.map((n: any) => [n.id, n]));
+            nodes.forEach(node => {
+                const diffNode = diffNodesById.get(node.id) as Node | undefined;
+                if (diffNode && diffNode.diff_status) {
+                    node.diff_status = diffNode.diff_status;
+                }
+            });
+        }
 
         console.log('[WorldMapView] Initializing Simulation with:', {
             node_count: nodes.length,
@@ -259,18 +302,47 @@ export function WorldMapView() {
 
         node.append('circle')
             .attr('r', d => d.id === data.metadata.active_trigger ? 18 : 12)
-            .attr('fill', d => typeConfig[d.type]?.color || '#444')
-            .attr('stroke', d => d.id === data.metadata.active_trigger ? '#fff' : '#000')
-            .attr('stroke-width', d => d.id === data.metadata.active_trigger ? 3 : 1)
-            .style('filter', d => d.id === data.metadata.active_trigger ? 'drop-shadow(0 0 8px #fbbf24)' : 'none');
+            .attr('fill', d => {
+                // Color by diff status if available
+                if ((d as any).diff_status === 'added') return '#10b981'; // green
+                if ((d as any).diff_status === 'modified') return '#f59e0b'; // yellow
+                if ((d as any).diff_status === 'removed') return '#ef4444'; // red
+                return typeConfig[d.type]?.color || '#444';
+            })
+            .attr('stroke', d => {
+                if ((d as any).diff_status) return '#fff';
+                return d.id === data.metadata.active_trigger ? '#fff' : '#000';
+            })
+            .attr('stroke-width', d => {
+                if ((d as any).diff_status) return 2;
+                return d.id === data.metadata.active_trigger ? 3 : 1;
+            })
+            .style('filter', d => {
+                if ((d as any).diff_status === 'added') return 'drop-shadow(0 0 6px #10b981)';
+                if ((d as any).diff_status === 'modified') return 'drop-shadow(0 0 6px #f59e0b)';
+                if ((d as any).diff_status === 'removed') return 'drop-shadow(0 0 6px #ef4444)';
+                return d.id === data.metadata.active_trigger ? 'drop-shadow(0 0 8px #fbbf24)' : 'none';
+            });
 
         node.append('text')
             .attr('dx', 16)
             .attr('dy', 4)
-            .text(d => `${d.name}${d.is_active === false ? ' (inactive)' : ''}`)
-            .attr('fill', d => d.is_active === false ? '#94a3b8' : 'gray')
+            .text(d => {
+                let label = d.name;
+                if ((d as any).diff_status === 'added') label += ' [+]';
+                if ((d as any).diff_status === 'modified') label += ' [~]';
+                if ((d as any).diff_status === 'removed') label += ' [-]';
+                if (d.is_active === false && !(d as any).diff_status) label += ' (inactive)';
+                return label;
+            })
+            .attr('fill', d => {
+                if ((d as any).diff_status === 'added') return '#10b981';
+                if ((d as any).diff_status === 'modified') return '#f59e0b';
+                if ((d as any).diff_status === 'removed') return '#ef4444';
+                return d.is_active === false ? '#94a3b8' : 'gray';
+            })
             .style('font-size', '10px')
-            .style('font-weight', '500')
+            .style('font-weight', d => (d as any).diff_status ? '600' : '500')
             .style('pointer-events', 'none');
 
         simulation.on('tick', () => {
@@ -302,7 +374,7 @@ export function WorldMapView() {
             );
         }, 500);
 
-    }, [data, viewMode, inactiveOpacity]);
+    }, [data, viewMode, inactiveOpacity, diffData]);
 
     // Artifacts View Component
     const ArtifactsView = () => {
@@ -379,17 +451,40 @@ export function WorldMapView() {
                         </UIButton>
                     </div>
                     {kgHistory && (
-                        <UIButton
-                            variant="ghost"
-                            size="sm"
-                            className={cn(
-                                "flex items-center gap-2 px-2.5 py-1 border rounded-md transition-colors",
-                                showHistory ? "bg-blue-500/20 border-blue-500/40" : "bg-blue-500/10 border-blue-500/20 hover:bg-blue-500/20"
-                            )}
-                            onClick={() => setShowHistory(!showHistory)}
-                        >
-                            <span className="text-[10px] font-bold text-blue-500 tracking-wider">KG v{kgHistory.total}</span>
-                        </UIButton>
+                        <>
+                            <UIButton
+                                variant="ghost"
+                                size="sm"
+                                className={cn(
+                                    "flex items-center gap-2 px-2.5 py-1 border rounded-md transition-colors",
+                                    showHistory ? "bg-blue-500/20 border-blue-500/40" : "bg-blue-500/10 border-blue-500/20 hover:bg-blue-500/20"
+                                )}
+                                onClick={() => setShowHistory(!showHistory)}
+                            >
+                                <span className="text-[10px] font-bold text-blue-500 tracking-wider">KG v{kgHistory.total}</span>
+                            </UIButton>
+                            <UIButton
+                                variant="ghost"
+                                size="sm"
+                                className={cn(
+                                    "flex items-center gap-2 px-2.5 py-1 border rounded-md transition-colors",
+                                    compareMode ? "bg-purple-500/20 border-purple-500/40" : "bg-purple-500/10 border-purple-500/20 hover:bg-purple-500/20"
+                                )}
+                                onClick={() => {
+                                    setCompareMode(!compareMode);
+                                    if (!compareMode) {
+                                        setShowHistory(true);
+                                    } else {
+                                        setCompareVersion1(null);
+                                        setCompareVersion2(null);
+                                        setDiffData(null);
+                                    }
+                                }}
+                            >
+                                <GitCompare className="h-3 w-3 text-purple-500" />
+                                <span className="text-[10px] font-bold text-purple-500 tracking-wider">Compare</span>
+                            </UIButton>
+                        </>
                     )}
                     <div className="h-4 w-px bg-border ml-2" />
                     <div className="flex items-center gap-2 px-2">
@@ -438,45 +533,168 @@ export function WorldMapView() {
 
             {/* History Panel - Slide In */}
             {showHistory && kgHistory && (
-                <div className="absolute top-12 left-0 bottom-0 w-64 bg-background/95 backdrop-blur-sm border-r border-border z-30 flex flex-col animate-in slide-in-from-left-4 duration-200">
+                <div className="absolute top-12 left-0 bottom-0 w-80 bg-background/95 backdrop-blur-sm border-r border-border z-30 flex flex-col animate-in slide-in-from-left-4 duration-200">
                     <div className="p-4 border-b border-border flex justify-between items-center bg-muted/30">
                         <div>
-                            <h3 className="text-xs font-bold uppercase tracking-wider text-foreground">Timeline</h3>
-                            <p className="text-[10px] text-muted-foreground">{kgHistory.total} snapshots available</p>
+                            <h3 className="text-xs font-bold uppercase tracking-wider text-foreground">
+                                {compareMode ? "Compare Versions" : "Timeline"}
+                            </h3>
+                            <p className="text-[10px] text-muted-foreground">
+                                {compareMode ? "Select two versions to compare" : `${kgHistory.total} snapshots available`}
+                            </p>
                         </div>
-                        <UIButton variant="ghost" size="icon" className="h-6 w-6" onClick={() => setShowHistory(false)}>
+                        <UIButton variant="ghost" size="icon" className="h-6 w-6" onClick={() => {
+                            setShowHistory(false);
+                            setCompareMode(false);
+                        }}>
                             <ZoomOut className="h-3 w-3" />
                         </UIButton>
                     </div>
-                    <div className="flex-1 overflow-y-auto p-2 space-y-1">
-                        <div
-                            className={cn(
-                                "p-3 rounded-md cursor-pointer transition-colors flex flex-col gap-1",
-                                !activeVersion ? "bg-primary/10 border border-primary/20" : "hover:bg-muted"
-                            )}
-                            onClick={() => fetchData()}
-                        >
-                            <span className="text-xs font-semibold text-foreground flex items-center justify-between">
-                                Current State
-                                {!activeVersion && <span className="w-1.5 h-1.5 rounded-full bg-green-500 animate-pulse" />}
-                            </span>
-                            <span className="text-[10px] text-muted-foreground">Live Active Graph</span>
-                        </div>
-
-                        {kgHistory.versions.map((v: any) => (
-                            <div
-                                key={v.id}
-                                className={cn(
-                                    "p-3 rounded-md cursor-pointer transition-colors flex flex-col gap-1 border border-transparent",
-                                    activeVersion === v.id ? "bg-purple-500/10 border-purple-500/20" : "hover:bg-muted"
-                                )}
-                                onClick={() => fetchData(v.id)}
-                            >
-                                <span className="text-xs font-medium text-foreground">{v.id}</span>
-                                <span className="text-[10px] text-muted-foreground">{v.timestamp}</span>
+                    {compareMode ? (
+                        <div className="flex-1 overflow-y-auto p-4 space-y-4">
+                            <div>
+                                <label className="text-[10px] font-bold text-muted-foreground uppercase mb-2 block">Version 1 (Base)</label>
+                                <div className="space-y-1">
+                                    <div
+                                        className={cn(
+                                            "p-2 rounded-md cursor-pointer transition-colors border",
+                                            compareVersion1 === "current" ? "bg-blue-500/20 border-blue-500/40" : "border-border hover:bg-muted"
+                                        )}
+                                        onClick={() => {
+                                            setCompareVersion1("current");
+                                            if (compareVersion2) fetchDiff("current", compareVersion2);
+                                        }}
+                                    >
+                                        <span className="text-xs font-medium text-foreground">Current State</span>
+                                    </div>
+                                    {kgHistory.versions.map((v: any) => (
+                                        <div
+                                            key={v.id}
+                                            className={cn(
+                                                "p-2 rounded-md cursor-pointer transition-colors border",
+                                                compareVersion1 === v.id ? "bg-blue-500/20 border-blue-500/40" : "border-border hover:bg-muted"
+                                            )}
+                                            onClick={() => {
+                                                setCompareVersion1(v.id);
+                                                if (compareVersion2) fetchDiff(v.id, compareVersion2);
+                                            }}
+                                        >
+                                            <span className="text-xs font-medium text-foreground">{v.id}</span>
+                                            <span className="text-[10px] text-muted-foreground block">{v.timestamp}</span>
+                                        </div>
+                                    ))}
+                                </div>
                             </div>
-                        ))}
-                    </div>
+                            <div>
+                                <label className="text-[10px] font-bold text-muted-foreground uppercase mb-2 block">Version 2 (Compare)</label>
+                                <div className="space-y-1">
+                                    <div
+                                        className={cn(
+                                            "p-2 rounded-md cursor-pointer transition-colors border",
+                                            compareVersion2 === "current" ? "bg-green-500/20 border-green-500/40" : "border-border hover:bg-muted"
+                                        )}
+                                        onClick={() => {
+                                            setCompareVersion2("current");
+                                            if (compareVersion1) fetchDiff(compareVersion1, "current");
+                                        }}
+                                    >
+                                        <span className="text-xs font-medium text-foreground">Current State</span>
+                                    </div>
+                                    {kgHistory.versions.map((v: any) => (
+                                        <div
+                                            key={v.id}
+                                            className={cn(
+                                                "p-2 rounded-md cursor-pointer transition-colors border",
+                                                compareVersion2 === v.id ? "bg-green-500/20 border-green-500/40" : "border-border hover:bg-muted"
+                                            )}
+                                            onClick={() => {
+                                                setCompareVersion2(v.id);
+                                                if (compareVersion1) fetchDiff(compareVersion1, v.id);
+                                            }}
+                                        >
+                                            <span className="text-xs font-medium text-foreground">{v.id}</span>
+                                            <span className="text-[10px] text-muted-foreground block">{v.timestamp}</span>
+                                        </div>
+                                    ))}
+                                </div>
+                            </div>
+                            {loadingDiff && (
+                                <div className="flex items-center justify-center py-4">
+                                    <div className="h-4 w-4 border-2 border-primary border-t-transparent rounded-full animate-spin" />
+                                </div>
+                            )}
+                            {diffData && diffData.summary && (
+                                <div className="mt-4 p-3 bg-muted/50 rounded-md border border-border">
+                                    <div className="text-[10px] font-bold text-muted-foreground uppercase mb-2">Diff Summary</div>
+                                    <div className="space-y-1 text-xs">
+                                        <div className="flex justify-between">
+                                            <span className="text-green-500">Added:</span>
+                                            <span className="font-medium">{diffData.summary.added}</span>
+                                        </div>
+                                        <div className="flex justify-between">
+                                            <span className="text-yellow-500">Modified:</span>
+                                            <span className="font-medium">{diffData.summary.modified}</span>
+                                        </div>
+                                        <div className="flex justify-between">
+                                            <span className="text-red-500">Removed:</span>
+                                            <span className="font-medium">{diffData.summary.removed}</span>
+                                        </div>
+                                        <div className="pt-2 border-t border-border mt-2">
+                                            <div className="flex justify-between text-[10px] text-muted-foreground">
+                                                <span>Nodes: {diffData.summary.total_nodes_v1} → {diffData.summary.total_nodes_v2}</span>
+                                            </div>
+                                            <div className="flex justify-between text-[10px] text-muted-foreground">
+                                                <span>Links: {diffData.summary.total_links_v1} → {diffData.summary.total_links_v2}</span>
+                                            </div>
+                                        </div>
+                                    </div>
+                                    <UIButton
+                                        variant="outline"
+                                        size="sm"
+                                        className="w-full mt-3 text-[10px] h-7 border-border"
+                                        onClick={() => {
+                                            // Load version2 with diff visualization
+                                            const version = compareVersion2 === "current" ? undefined : (compareVersion2 || undefined);
+                                            fetchData(version, true);
+                                            setActiveVersion(compareVersion2 === "current" ? null : compareVersion2);
+                                        }}
+                                    >
+                                        View Version 2 with Diff
+                                    </UIButton>
+                                </div>
+                            )}
+                        </div>
+                    ) : (
+                        <div className="flex-1 overflow-y-auto p-2 space-y-1">
+                            <div
+                                className={cn(
+                                    "p-3 rounded-md cursor-pointer transition-colors flex flex-col gap-1",
+                                    !activeVersion ? "bg-primary/10 border border-primary/20" : "hover:bg-muted"
+                                )}
+                                onClick={() => fetchData()}
+                            >
+                                <span className="text-xs font-semibold text-foreground flex items-center justify-between">
+                                    Current State
+                                    {!activeVersion && <span className="w-1.5 h-1.5 rounded-full bg-green-500 animate-pulse" />}
+                                </span>
+                                <span className="text-[10px] text-muted-foreground">Live Active Graph</span>
+                            </div>
+
+                            {kgHistory.versions.map((v: any) => (
+                                <div
+                                    key={v.id}
+                                    className={cn(
+                                        "p-3 rounded-md cursor-pointer transition-colors flex flex-col gap-1 border border-transparent",
+                                        activeVersion === v.id ? "bg-purple-500/10 border-purple-500/20" : "hover:bg-muted"
+                                    )}
+                                    onClick={() => fetchData(v.id)}
+                                >
+                                    <span className="text-xs font-medium text-foreground">{v.id}</span>
+                                    <span className="text-[10px] text-muted-foreground">{v.timestamp}</span>
+                                </div>
+                            ))}
+                        </div>
+                    )}
                 </div>
             )}
 
