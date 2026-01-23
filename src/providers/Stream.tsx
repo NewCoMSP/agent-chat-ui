@@ -231,13 +231,17 @@ const StreamSession = ({
   }, [rawStream, apiKey, apiUrl, threadId, orgContext]);
 
   useEffect(() => {
-    checkGraphStatus(apiUrl, apiKey).then((ok) => {
+    // For relative paths (like /api), check via /api/info endpoint
+    // For absolute URLs, check directly
+    const checkUrl = apiUrl && !apiUrl.startsWith("/") ? apiUrl : "/api";
+    checkGraphStatus(checkUrl, apiKey).then((ok) => {
       if (!ok) {
         toast.error("Failed to connect to LangGraph server", {
           description: () => (
             <p>
-              Please ensure your graph is running at <code>{apiUrl}</code> and
-              your API key is correctly set (if connecting to a deployed graph).
+              {apiUrl && !apiUrl.startsWith("/") 
+                ? `Unable to connect to ${apiUrl}. Please ensure the backend is running and LANGGRAPH_API_URL is correctly configured.`
+                : "Unable to connect to the backend. Please check that the backend is running and that LANGGRAPH_API_URL is correctly configured in the Next.js API routes."}
             </p>
           ),
           duration: 10000,
@@ -256,8 +260,13 @@ const StreamSession = ({
 };
 
 // Default values for the form
-// Default values for the local stack (Proxy at 8080)
-const DEFAULT_API_URL = "http://localhost:8080";
+// In production, NEXT_PUBLIC_API_URL should be set to the frontend's own API proxy URL
+// (e.g., https://reflexion-ui-staging.up.railway.app/api)
+// For local development, the LangGraph SDK connects through Next.js API proxy at /api
+// which then forwards to the backend at localhost:8080
+const DEFAULT_API_URL = typeof window !== "undefined" && window.location.origin 
+  ? `${window.location.origin}/api` 
+  : "/api";
 const DEFAULT_ASSISTANT_ID = "reflexion";
 
 export const StreamProvider: React.FC<{ children: ReactNode }> = ({

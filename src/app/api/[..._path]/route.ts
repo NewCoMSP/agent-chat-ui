@@ -5,7 +5,8 @@ import { initApiPassthrough } from "langgraph-nextjs-api-passthrough";
 
 export const { GET, POST, PUT, PATCH, DELETE, OPTIONS, runtime } =
   initApiPassthrough({
-    apiUrl: process.env.LANGGRAPH_API_URL ?? "remove-me", // default, if not defined it will attempt to read process.env.LANGGRAPH_API_URL
+    // Use LANGGRAPH_API_URL if set, otherwise fallback to staging backend URL
+    apiUrl: process.env.LANGGRAPH_API_URL ?? "https://reflexion-staging.up.railway.app",
     apiKey: process.env.LANGSMITH_API_KEY ?? "remove-me", // default, if not defined it will attempt to read process.env.LANGSMITH_API_KEY
     runtime: "edge", // default
   });
