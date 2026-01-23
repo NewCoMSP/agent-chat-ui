@@ -1,13 +1,32 @@
 # Stage 1: Dependencies
 FROM node:20-slim AS deps
 WORKDIR /app
+
+# Install pnpm globally (cached layer)
+RUN npm install -g pnpm@10.5.1
+
+# Copy only package files first for better caching
 COPY package.json pnpm-lock.yaml* ./
-RUN npm install -g pnpm && pnpm install --frozen-lockfile
+
+# Install dependencies with cache mount for faster rebuilds
+# Railway will cache this layer if package files don't change
+RUN --mount=type=cache,id=pnpm-store,target=/root/.local/share/pnpm/store \
+    pnpm install --frozen-lockfile
 
 # Stage 2: Builder
 FROM node:20-slim AS builder
 WORKDIR /app
+
+# Install pnpm globally (cached layer)
+RUN npm install -g pnpm@10.5.1
+
+# Copy dependencies from deps stage
 COPY --from=deps /app/node_modules ./node_modules
+
+# Copy package files
+COPY package.json pnpm-lock.yaml* ./
+
+# Copy source files (this should be after node_modules for better caching)
 COPY . .
 
 # Accept build arguments for NEXT_PUBLIC_ environment variables
@@ -20,7 +39,14 @@ ENV NEXT_PUBLIC_LANGSMITH_API_KEY=${NEXT_PUBLIC_LANGSMITH_API_KEY}
 ENV NEXT_PUBLIC_LANGSMITH_ENDPOINT=${NEXT_PUBLIC_LANGSMITH_ENDPOINT}
 ENV NEXT_PUBLIC_LANGSMITH_PROJECT=${NEXT_PUBLIC_LANGSMITH_PROJECT}
 
-RUN npm install -g pnpm && pnpm run build
+# Set NODE_ENV for faster builds
+ENV NODE_ENV=production
+ENV NEXT_TELEMETRY_DISABLED=1
+
+# Build the application with cache mount for .next cache
+# This significantly speeds up rebuilds when only source code changes
+RUN --mount=type=cache,id=nextjs-build,target=/app/.next/cache \
+    pnpm run build
 
 # Stage 3: Runner
 FROM node:20-slim AS runner
