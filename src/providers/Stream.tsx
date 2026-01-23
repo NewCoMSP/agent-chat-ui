@@ -78,8 +78,8 @@ async function checkGraphStatus(
   apiKey: string | null,
 ): Promise<boolean> {
   try {
-    const cleanUrl = apiUrl.replace(/\/+$/, "");
-    const res = await fetch(`${cleanUrl}/info`, {
+    // Use Next.js API route to proxy to backend
+    const res = await fetch("/api/info", {
       ...(apiKey && {
         headers: {
           "X-Api-Key": apiKey,
@@ -268,13 +268,14 @@ export const StreamProvider: React.FC<{ children: ReactNode }> = ({
   const envAssistantId: string | undefined =
     process.env.NEXT_PUBLIC_ASSISTANT_ID;
 
-  // Use URL params with env var fallbacks
-  const [apiUrl, setApiUrl] = useQueryState("apiUrl", {
-    defaultValue: envApiUrl || "",
-  });
-  const [assistantId, setAssistantId] = useQueryState("assistantId", {
-    defaultValue: envAssistantId || "",
-  });
+  // Use URL params only for overrides (not defaults)
+  // Don't sync defaults to URL - only use query params when explicitly set and different from env vars
+  const [apiUrlParam, setApiUrlParam] = useQueryState("apiUrl");
+  const [assistantIdParam, setAssistantIdParam] = useQueryState("assistantId");
+
+  // Determine actual values: URL param > env var > default
+  const apiUrl = apiUrlParam || envApiUrl || DEFAULT_API_URL;
+  const assistantId = assistantIdParam || envAssistantId || DEFAULT_ASSISTANT_ID;
 
   // For API key, use localStorage with env var fallback
   const [apiKey, _setApiKey] = useState(() => {
@@ -287,15 +288,20 @@ export const StreamProvider: React.FC<{ children: ReactNode }> = ({
     _setApiKey(key);
   };
 
-  // Auto-set defaults if not already set in URL params or env vars
+  // Clean up URL params if they match defaults/env vars (to keep URLs clean)
   useEffect(() => {
-    if (!apiUrl && !envApiUrl) {
-      setApiUrl(DEFAULT_API_URL);
+    // Remove query params that match defaults/env vars to keep URLs clean
+    if (apiUrlParam) {
+      if (apiUrlParam === DEFAULT_API_URL || apiUrlParam === envApiUrl) {
+        setApiUrlParam(null, { history: 'replace', shallow: false });
+      }
     }
-    if (!assistantId && !envAssistantId) {
-      setAssistantId(DEFAULT_ASSISTANT_ID);
+    if (assistantIdParam) {
+      if (assistantIdParam === DEFAULT_ASSISTANT_ID || assistantIdParam === envAssistantId) {
+        setAssistantIdParam(null, { history: 'replace', shallow: false });
+      }
     }
-  }, [apiUrl, assistantId, envApiUrl, envAssistantId, setApiUrl, setAssistantId]);
+  }, [apiUrlParam, assistantIdParam, envApiUrl, envAssistantId, setApiUrlParam, setAssistantIdParam]);
 
   // Determine final values to use, prioritizing URL params then env vars, then defaults
   // Note: These are computed but not currently used - apiUrl and assistantId from context already have defaults

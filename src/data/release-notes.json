@@ -1,5 +1,38 @@
 [
     {
+        "id": "v1.4.0",
+        "version": "1.4.0",
+        "date": "2026-01-21",
+        "title": "Unified Observability & GitHub-Native Persistence",
+        "description": "Major observability upgrade with end-to-end distributed tracing and GitHub API-based data persistence, eliminating dependency on local file system and git operations.",
+        "features": [
+            {
+                "name": "OpenTelemetry & LangSmith Integration",
+                "description": "Full end-to-end distributed tracing from frontend through backend to LangGraph. Client-side OpenTelemetry Web SDK captures thread operations and HTTP requests, with automatic trace context propagation via traceparent headers. All traces unified in LangSmith for comprehensive observability."
+            },
+            {
+                "name": "GitHub-Native File Storage",
+                "description": "Branding and project model data now persist directly via GitHub Contents API (similar to GitHub issues), eliminating reliance on local file writes and git commits. Automatic fallback to MCP git server when GitHub storage is disabled. Controlled by USE_GITHUB_STORAGE environment variable."
+            },
+            {
+                "name": "Thread-Aware Tracing",
+                "description": "Enhanced trace correlation with thread ID extraction from URL paths, query parameters, and request bodies. Thread IDs automatically included in LangSmith metadata for unified diagnostics across frontend, proxy, and LangGraph operations."
+            },
+            {
+                "name": "AI Trace Compatibility",
+                "description": "Client-side spans include placeholder GenAI and LLM attributes (gen_ai.*, llm.*) to mimic AI traces, ensuring proper recognition and processing by LangSmith's OpenTelemetry endpoint. All LangSmith-recognized attributes configured per official documentation."
+            },
+            {
+                "name": "Server-Side Next.js Instrumentation",
+                "description": "Automatic server-side OpenTelemetry instrumentation for Next.js API routes, capturing HTTP method, route, target, and status code. Nested span visualization for complete request lifecycle tracking."
+            },
+            {
+                "name": "Proxy Trace Context Propagation",
+                "description": "Proxy server extracts and propagates OpenTelemetry trace context from client requests, creating proxy.request spans as children of client spans. Explicit OTEL trace/span ID injection into LangGraph metadata for seamless correlation."
+            }
+        ]
+    },
+    {
         "id": "v1.3.0",
         "version": "1.3.0",
         "date": "2026-01-20",
