@@ -8,10 +8,9 @@ RUN npm install -g pnpm@10.5.1
 # Copy only package files first for better caching
 COPY package.json pnpm-lock.yaml* ./
 
-# Install dependencies with cache mount for faster rebuilds
-# Railway will cache this layer if package files don't change
-RUN --mount=type=cache,id=pnpm-store,target=/root/.local/share/pnpm/store \
-    pnpm install --frozen-lockfile
+# Install dependencies
+# Railway's native build cache will cache this layer if package files don't change
+RUN pnpm install --frozen-lockfile
 
 # Stage 2: Builder
 FROM node:20-slim AS builder
@@ -43,10 +42,9 @@ ENV NEXT_PUBLIC_LANGSMITH_PROJECT=${NEXT_PUBLIC_LANGSMITH_PROJECT}
 ENV NODE_ENV=production
 ENV NEXT_TELEMETRY_DISABLED=1
 
-# Build the application with cache mount for .next cache
-# This significantly speeds up rebuilds when only source code changes
-RUN --mount=type=cache,id=nextjs-build,target=/app/.next/cache \
-    pnpm run build
+# Build the application
+# Railway's native build cache will cache this layer when source code doesn't change
+RUN pnpm run build
 
 # Stage 3: Runner
 FROM node:20-slim AS runner
