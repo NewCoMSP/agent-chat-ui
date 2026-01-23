@@ -9,6 +9,17 @@ FROM node:20-slim AS builder
 WORKDIR /app
 COPY --from=deps /app/node_modules ./node_modules
 COPY . .
+
+# Accept build arguments for NEXT_PUBLIC_ environment variables
+ARG NEXT_PUBLIC_LANGSMITH_API_KEY
+ARG NEXT_PUBLIC_LANGSMITH_ENDPOINT
+ARG NEXT_PUBLIC_LANGSMITH_PROJECT
+
+# Set environment variables for build
+ENV NEXT_PUBLIC_LANGSMITH_API_KEY=${NEXT_PUBLIC_LANGSMITH_API_KEY}
+ENV NEXT_PUBLIC_LANGSMITH_ENDPOINT=${NEXT_PUBLIC_LANGSMITH_ENDPOINT}
+ENV NEXT_PUBLIC_LANGSMITH_PROJECT=${NEXT_PUBLIC_LANGSMITH_PROJECT}
+
 RUN npm install -g pnpm && pnpm run build
 
 # Stage 3: Runner

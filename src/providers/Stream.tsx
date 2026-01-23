@@ -23,6 +23,7 @@ import { useThreads } from "./Thread";
 import { toast } from "sonner";
 import { useSession } from "next-auth/react";
 import { createClient } from "./client";
+import { withThreadSpan } from "@/lib/otel-client";
 
 export type StateType = {
   messages: Message[];
@@ -140,7 +141,22 @@ const StreamSession = ({
       if (id && id !== threadId) {
         console.log("[Stream] Thread ID changed to:", id);
         setThreadId(id);
-        sleep().then(() => getThreads().then(setThreads).catch(console.error));
+        // Trace thread creation/assignment
+        // Note: withThreadSpan is async, but we don't await it to avoid blocking
+        withThreadSpan(
+          "thread.created",
+          {
+            "thread.id": id || "unknown",
+            "thread.previous_id": threadId || "none",
+            "api.url": apiUrl,
+          },
+          async () => {
+            await sleep();
+            await getThreads().then(setThreads).catch(console.error);
+          }
+        ).catch((err) => {
+          console.error("[OTEL] Failed to trace thread creation:", err);
+        });
       }
     },
   });
@@ -282,8 +298,9 @@ export const StreamProvider: React.FC<{ children: ReactNode }> = ({
   }, [apiUrl, assistantId, envApiUrl, envAssistantId, setApiUrl, setAssistantId]);
 
   // Determine final values to use, prioritizing URL params then env vars, then defaults
-  const finalApiUrl = apiUrl || envApiUrl || DEFAULT_API_URL;
-  const finalAssistantId = assistantId || envAssistantId || DEFAULT_ASSISTANT_ID;
+  // Note: These are computed but not currently used - apiUrl and assistantId from context already have defaults
+  const _finalApiUrl = apiUrl || envApiUrl || DEFAULT_API_URL;
+  const _finalAssistantId = assistantId || envAssistantId || DEFAULT_ASSISTANT_ID;
 
   // Sync Session Token from NextAuth
   const { data: session } = useSession();
