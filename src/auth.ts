@@ -73,6 +73,10 @@ export const authOptions: NextAuthOptions = {
                 token.role = config.role;
 
                 // 2. Mint Backend-Compatible Token
+                // Use REFLEXION_JWT_SECRET to match backend validation
+                // Fallback to NEXTAUTH_SECRET if REFLEXION_JWT_SECRET is not set (for local dev)
+                const jwtSecret = process.env.REFLEXION_JWT_SECRET || process.env.NEXTAUTH_SECRET!;
+                
                 const backendPayload = {
                     sub: userEmail,
                     email: userEmail,
@@ -81,7 +85,7 @@ export const authOptions: NextAuthOptions = {
                     role: config.role,
                 };
 
-                token.idToken = jwt.sign(backendPayload, process.env.NEXTAUTH_SECRET!, {
+                token.idToken = jwt.sign(backendPayload, jwtSecret, {
                     algorithm: "HS256",
                     expiresIn: "7d"
                 });
@@ -106,6 +110,10 @@ export const authOptions: NextAuthOptions = {
                 }
 
                 if (shouldRefresh) {
+                    // Use REFLEXION_JWT_SECRET to match backend validation
+                    // Fallback to NEXTAUTH_SECRET if REFLEXION_JWT_SECRET is not set (for local dev)
+                    const jwtSecret = process.env.REFLEXION_JWT_SECRET || process.env.NEXTAUTH_SECRET!;
+                    
                     const backendPayload = {
                         sub: token.email,
                         email: token.email,
@@ -113,7 +121,7 @@ export const authOptions: NextAuthOptions = {
                         project_id: token.projectId,
                         role: token.role,
                     };
-                    token.idToken = jwt.sign(backendPayload, process.env.NEXTAUTH_SECRET!, {
+                    token.idToken = jwt.sign(backendPayload, jwtSecret, {
                         algorithm: "HS256",
                         expiresIn: "7d"
                     });
