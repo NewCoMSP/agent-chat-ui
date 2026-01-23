@@ -117,20 +117,6 @@ export function Thread({ embedded, className, hideArtifacts }: ThreadProps = {})
     parseAsBoolean.withDefault(false),
   );
   const [input, setInput] = useState("");
-  const {
-    contentBlocks,
-    setContentBlocks,
-    handleFileUpload,
-    dropRef,
-    removeBlock,
-    resetBlocks: _resetBlocks,
-    dragOver,
-    handlePaste,
-  } = useFileUpload();
-  const [firstTokenReceived, setFirstTokenReceived] = useState(false);
-
-  const isLargeScreen = useMediaQuery("(min-width: 1024px)");
-
   const stream = useStreamContext();
   const {
     messages = [],
@@ -138,6 +124,22 @@ export function Thread({ embedded, className, hideArtifacts }: ThreadProps = {})
     setApiKey,
     apiUrl = "http://localhost:8080",
   } = stream;
+  const {
+    contentBlocks,
+    setContentBlocks,
+    uploadedDocuments,
+    uploading,
+    handleFileUpload,
+    dropRef,
+    removeBlock,
+    removeDocument,
+    resetBlocks: _resetBlocks,
+    dragOver,
+    handlePaste,
+  } = useFileUpload({ apiUrl, threadId });
+  const [firstTokenReceived, setFirstTokenReceived] = useState(false);
+
+  const isLargeScreen = useMediaQuery("(min-width: 1024px)");
   const safeMessages = messages ?? [];
 
   const lastError = useRef<string | undefined>(undefined);
@@ -193,7 +195,7 @@ export function Thread({ embedded, className, hideArtifacts }: ThreadProps = {})
 
   const handleSubmit = (e: FormEvent) => {
     e.preventDefault();
-    if ((input.trim().length === 0 && contentBlocks.length === 0) || isLoading)
+    if ((input.trim().length === 0 && contentBlocks.length === 0 && uploadedDocuments.length === 0) || isLoading || uploading)
       return;
     setFirstTokenReceived(false);
 
@@ -211,13 +213,18 @@ export function Thread({ embedded, className, hideArtifacts }: ThreadProps = {})
     const orgContext = typeof window !== 'undefined' ? localStorage.getItem('reflexion_org_context') : null;
     const context = {
       ...(Object.keys(artifactContext).length > 0 ? artifactContext : {}),
-      ...(orgContext ? { user_id: orgContext } : {})
+      ...(orgContext ? { user_id: orgContext } : {}),
+      // Include uploaded document IDs for Hydration agent to process
+      ...(uploadedDocuments.length > 0 ? { 
+        pending_document_ids: uploadedDocuments.map(d => d.document_id) 
+      } : {})
     };
 
     console.log("[Thread] Submitting new human message:", {
       content: newHumanMessage.content,
       context,
-      toolMessagesCount: toolMessages.length
+      toolMessagesCount: toolMessages.length,
+      uploadedDocuments: uploadedDocuments.length
     });
 
     // Trace message submission, especially for new threads
@@ -229,6 +236,7 @@ export function Thread({ embedded, className, hideArtifacts }: ThreadProps = {})
         "thread.is_new": isNewThread,
         "message.has_text": input.trim().length > 0,
         "message.content_blocks": contentBlocks.length,
+        "message.uploaded_documents": uploadedDocuments.length,
         "message.tool_messages": toolMessages.length,
         "api.url": stream.apiUrl || "unknown",
       },
@@ -257,6 +265,8 @@ export function Thread({ embedded, className, hideArtifacts }: ThreadProps = {})
 
     setInput("");
     setContentBlocks([]);
+    // Note: uploadedDocuments are kept in state so they can be referenced by the agent
+    // They will be cleared when the thread is reset or when explicitly removed
   };
 
 
