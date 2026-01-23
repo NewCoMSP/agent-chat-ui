@@ -18,7 +18,13 @@ export async function GET(req: NextRequest) {
       console.debug("[API] /info - No session available (this is OK for health checks)");
     }
 
-    const backendUrl = process.env.LANGGRAPH_API_URL || "http://localhost:8080";
+    // In production/staging, LANGGRAPH_API_URL should be set
+    // Fallback to staging URL if not set (better than localhost)
+    let backendUrl = process.env.LANGGRAPH_API_URL;
+    if (!backendUrl) {
+        console.warn("[API] /info - LANGGRAPH_API_URL not set, using staging URL as fallback");
+        backendUrl = "https://reflexion-staging.up.railway.app";
+    }
     const cleanUrl = backendUrl.replace(/\/+$/, "");
     const targetUrl = `${cleanUrl}/info`;
 
@@ -43,10 +49,26 @@ export async function GET(req: NextRequest) {
     });
 
     if (!resp.ok) {
-      const errorText = await resp.text();
-      console.error(`[API] /info backend error: ${resp.status} - ${errorText}`);
+      // Clone response before reading to avoid issues
+      const clonedResp = resp.clone();
+      let errorText = "";
+      try {
+        // Check if response is JSON
+        const contentType = resp.headers.get("content-type");
+        if (contentType && contentType.includes("application/json")) {
+          errorText = await clonedResp.json();
+        } else {
+          // If it's HTML (like 404 page), just get status
+          const text = await resp.text();
+          // Truncate HTML responses to avoid log spam
+          errorText = text.length > 200 ? text.substring(0, 200) + "..." : text;
+        }
+      } catch (parseError) {
+        errorText = `Backend returned ${resp.status} ${resp.statusText}`;
+      }
+      console.error(`[API] /info backend error: ${resp.status} - ${typeof errorText === 'string' ? errorText : JSON.stringify(errorText)}`);
       return NextResponse.json(
-        { error: "Backend error", details: errorText },
+        { error: "Backend error", details: typeof errorText === 'string' ? errorText : JSON.stringify(errorText) },
         { status: resp.status }
       );
     }

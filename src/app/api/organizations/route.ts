@@ -3,7 +3,15 @@ import { getServerSession } from "next-auth";
 import { authOptions } from "@/auth";
 
 function getBackendUrl(): string {
-    let backendUrl = process.env.LANGGRAPH_API_URL || "http://localhost:8080";
+    let backendUrl = process.env.LANGGRAPH_API_URL;
+    
+    // In production/staging, LANGGRAPH_API_URL should be set
+    // Fallback to staging URL if not set (better than localhost)
+    if (!backendUrl) {
+        console.warn("[PROXY] LANGGRAPH_API_URL not set, using staging URL as fallback");
+        backendUrl = "https://reflexion-staging.up.railway.app";
+    }
+    
     if (backendUrl.endsWith("/")) backendUrl = backendUrl.slice(0, -1);
     return backendUrl;
 }
@@ -34,12 +42,19 @@ export async function GET(req: Request) {
         const resp = await fetch(targetUrl, { headers });
 
         if (!resp.ok) {
+            // Clone response before reading to avoid "Body is unusable" error
+            const clonedResp = resp.clone();
             let errorText = "";
             try {
-                const errorData = await resp.json();
+                const errorData = await clonedResp.json();
                 errorText = errorData.detail || errorData.error || JSON.stringify(errorData);
             } catch {
-                errorText = await resp.text();
+                // If JSON parsing fails, try text
+                try {
+                    errorText = await resp.text();
+                } catch (textError) {
+                    errorText = `Backend returned ${resp.status} ${resp.statusText}`;
+                }
             }
             console.error(`[PROXY] Backend error (orgs): ${resp.status} - ${errorText}`);
             return NextResponse.json({ error: errorText || "Backend error" }, { status: resp.status });
