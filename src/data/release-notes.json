@@ -1,5 +1,38 @@
 [
     {
+        "id": "v1.5.0",
+        "version": "1.5.0",
+        "date": "2026-01-26",
+        "title": "Enrichment Approval Workbench & Enhanced Layout",
+        "description": "Major UI improvements moving enrichment approval to dedicated workbench view and enhancing the overall workbench layout for better space utilization and user experience.",
+        "features": [
+            {
+                "name": "Enrichment Approval Workbench View",
+                "description": "Moved enrichment approval from modal dialog to dedicated workbench tab. Provides more space for reviewing enrichment proposals, better organization, and seamless integration with the workbench workflow. Automatically switches to enrichment view after file/folder uploads."
+            },
+            {
+                "name": "Collapsible Project Sidebar",
+                "description": "Left sidebar with project listings can now be collapsed to provide more space for the workbench content. Toggle button allows quick show/hide of the project pane."
+            },
+            {
+                "name": "Resizable Agent Chat Panel",
+                "description": "Agent chat moved to bottom panel with draggable resizer. Users can adjust the relative height of the agent panel and workbench content by dragging the divider. Minimum height constraints ensure usability."
+            },
+            {
+                "name": "Meaningful Project Names",
+                "description": "Project names now display meaningful names extracted from classification reasoning or trigger descriptions. UUIDs are formatted as 'Project {shortId}' with full ID available in tooltip."
+            },
+            {
+                "name": "Map View Bug Fixes",
+                "description": "Fixed D3 force simulation error when links reference nodes that don't exist in the current dataset. Links are now filtered to only include valid source/target pairs, preventing 'node not found' errors."
+            },
+            {
+                "name": "Enhanced Enrichment Flow",
+                "description": "Improved enrichment proposal fetching with thread_id query parameter support. Better error handling and logging for debugging enrichment issues. Seamless integration with folder upload workflow."
+            }
+        ]
+    },
+    {
         "id": "v1.4.0",
         "version": "1.4.0",
         "date": "2026-01-21",
@@ -48,50 +81,12 @@
                 "description": "Rich Human-in-the-Loop (HITL) approval flow. New nodes are highlighted in Green, modified in Amber, and removed in Red. AI-generated semantic summaries for large changes."
             },
             {
-                "name": "LLM Fallback & Stability",
-                "description": "Automatic fallback to OpenAI (GPT-4o) if Anthropic services are unavailable. Standardized project paths and fixed critical NameError bugs."
+                "name": "Commit History Integration",
+                "description": "Knowledge Graph versioning now uses GitHub commit history instead of separate version files. Commit messages displayed as friendly version names with SHA as secondary text. Timeline view shows all KG versions with commit metadata."
             },
             {
-                "name": "Refined Workspace UX",
-                "description": "The workbench has received a significant visual and functional overhaul. Features include a unified Product Panel for viewing Backlog and Release Notes, glassmorphism-inspired detail cards, and an automated view-switching system that ensures the most relevant graph or workflow is always visible."
-            },
-            {
-                "name": "Strategic Tools",
-                "description": "Direct GitHub integration for creating feature requests and managing issue comments from within the workspace."
-            }
-        ]
-    },
-    {
-        "id": "v1.2.0",
-        "version": "1.2.0",
-        "date": "2026-01-16",
-        "title": "Methodology Intake, Project Hydration & Enterprise Branding",
-        "description": "Major deployment featuring the new Knowledge Architecture, automatic project hydration, and acceptable Enterprise Branding system.",
-        "features": [
-            {
-                "name": "Project Hydration Architecture",
-                "description": "Automatic enrichment of customer models with best practices using a new Knowledge Repository and structured guides."
-            },
-            {
-                "name": "Enterprise Branding System",
-                "description": "Configurable client identity system supporting scoped aesthetics (standard vs. pill-shaped interactive elements) and unified color schemes.",
-                "recording_path": "/recordings/daikin-branding.json"
-            },
-            {
-                "name": "Enhanced Supervisor",
-                "description": "Implemented mandatory two-step orientation and handoff validation for robust agent orchestration."
-            },
-            {
-                "name": "Knowledge Graph Visualization",
-                "description": "Deep methodology rendering in the details panel with intelligent artifact link suggestions and resolved scroll leakage."
-            },
-            {
-                "name": "New Tools & Modules",
-                "description": "Added lookup_detailed_knowledge and save_external_context tools, plus new project_model.py for state management."
-            },
-            {
-                "name": "Infrastructure Improvements",
-                "description": "Robust git-based versioning with Docker support and fixed async tool invocation errors."
+                "name": "Diff Visualization",
+                "description": "Visual comparison of Knowledge Graph versions with color-coded nodes (green for added, yellow for modified, red for removed). Diff summary shows counts of changes. Full dataset loaded for accurate comparison."
             }
         ]
     }
