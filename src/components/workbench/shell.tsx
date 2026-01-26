@@ -435,8 +435,8 @@ export function WorkbenchShell({ children }: { children: React.ReactNode }) {
                                     </Button>
                                 </div>
                                 {/* Agent Chat Content */}
-                                <div className="flex-1 min-h-0 overflow-hidden bg-background" style={{ maxHeight: '100%', height: '100%' }}>
-                                    <div className="h-full w-full overflow-hidden">
+                                <div className="flex-1 min-h-0 overflow-hidden bg-background" style={{ maxHeight: '100%', height: '100%', display: 'flex', flexDirection: 'column' }}>
+                                    <div className="h-full w-full overflow-hidden" style={{ maxHeight: '100%', height: '100%', display: 'flex', flexDirection: 'column' }}>
                                         <Thread embedded hideArtifacts />
                                     </div>
                                 </div>

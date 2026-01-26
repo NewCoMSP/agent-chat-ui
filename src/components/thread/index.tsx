@@ -534,14 +534,14 @@ export function Thread({ embedded, className, hideArtifacts }: ThreadProps = {})
             </div>
           )}
 
-          <StickToBottom className="relative flex-1 overflow-hidden min-h-0" style={{ maxHeight: '100%', height: '100%' }}>
+          <StickToBottom className="relative flex-1 overflow-hidden min-h-0" style={{ maxHeight: '100%', height: '100%', display: 'flex', flexDirection: 'column' }}>
             <StickyToBottomContent
               className={cn(
                 "px-4 [&::-webkit-scrollbar]:w-1.5 [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:bg-gray-300 [&::-webkit-scrollbar-track]:bg-transparent",
                 !chatStarted && "mt-[25vh]",
               )}
               contentClassName="pt-8 pb-16 max-w-3xl mx-auto flex flex-col gap-4 w-full"
-              style={{ maxHeight: '100%', height: '100%' }}
+              style={{ maxHeight: '100%', height: '100%', flex: '1 1 auto', minHeight: 0, overflow: 'hidden' }}
               content={
                 <>
                   {safeMessages
@@ -588,7 +588,7 @@ export function Thread({ embedded, className, hideArtifacts }: ThreadProps = {})
                 </>
               }
               footer={
-                <div className="flex flex-col items-center gap-8 bg-background z-10 shrink-0 w-full">
+                <div className="flex flex-col items-center gap-8 bg-background z-10 shrink-0 w-full" style={{ flexShrink: 0, maxWidth: '100%', overflow: 'hidden', boxSizing: 'border-box' }}>
                   {!chatStarted && (
                     <div className="flex items-center gap-3">
                       <LangGraphLogoSVG className="h-8 flex-shrink-0 text-primary" />
@@ -608,6 +608,7 @@ export function Thread({ embedded, className, hideArtifacts }: ThreadProps = {})
                         ? "border-primary border-2 border-dotted"
                         : "border border-solid",
                     )}
+                    style={{ maxWidth: 'calc(100% - 2rem)', boxSizing: 'border-box' }}
                   >
                     <form
                       onSubmit={handleSubmit}
