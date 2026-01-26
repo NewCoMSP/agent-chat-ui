@@ -49,6 +49,69 @@ interface UseFileUploadOptions {
   threadId?: string | null;
 }
 
+/**
+ * Helper function to get the direct backend URL for file uploads.
+ * Bypasses Next.js proxy which can't handle multipart/form-data.
+ * 
+ * This function ALWAYS returns a direct backend URL, never a proxy path.
+ * For file uploads, we must bypass the Next.js proxy because it reads
+ * the request body as text, which breaks multipart/form-data.
+ */
+function getDirectBackendUrl(apiUrl: string): string {
+  // If apiUrl is already an absolute URL (starts with http:// or https://)
+  // and it's not a proxy path, we can use it directly
+  if (apiUrl.startsWith("http://") || apiUrl.startsWith("https://")) {
+    // But if it's pointing to the frontend (reflexion-ui), we need to redirect to backend
+    if (apiUrl.includes('reflexion-ui') || apiUrl.includes('/api')) {
+      // Extract the backend URL from the frontend URL
+      if (apiUrl.includes('railway.app')) {
+        return "https://reflexion-staging.up.railway.app";
+      }
+      // For localhost, replace the port
+      return apiUrl.replace('reflexion-ui', 'reflexion').replace(':3000', ':8080').replace('/api', '');
+    }
+    return apiUrl;
+  }
+  
+  // If apiUrl is relative (starts with / or /api), we MUST bypass the proxy
+  // This is the most common case in production where apiUrl = "/api"
+  if (apiUrl.startsWith("/") || apiUrl.startsWith("/api")) {
+    if (typeof window !== 'undefined') {
+      const hostname = window.location.hostname;
+      const origin = window.location.origin;
+      
+      console.log("[FileUpload] getDirectBackendUrl - Bypassing proxy. Original apiUrl:", apiUrl, "hostname:", hostname);
+      
+      // Check for Railway staging (most common production case)
+      if (hostname.includes('railway.app') || hostname.includes('reflexion-ui') || hostname.includes('reflexion-staging')) {
+        const backendUrl = "https://reflexion-staging.up.railway.app";
+        console.log("[FileUpload] Detected Railway, using direct backend URL:", backendUrl);
+        return backendUrl;
+      }
+      
+      // Check for localhost
+      if (hostname === 'localhost' || hostname === '127.0.0.1') {
+        const backendUrl = "http://localhost:8080";
+        console.log("[FileUpload] Detected localhost, using direct backend URL:", backendUrl);
+        return backendUrl;
+      }
+      
+      // Fallback: try to construct from current origin
+      const fallbackUrl = origin.replace('reflexion-ui', 'reflexion').replace(':3000', ':8080');
+      console.warn("[FileUpload] Unknown hostname, using fallback URL:", fallbackUrl);
+      return fallbackUrl;
+    } else {
+      // Server-side: use environment variable or default
+      return process.env.NEXT_PUBLIC_API_URL || "https://reflexion-staging.up.railway.app";
+    }
+  }
+  
+  // If we get here, apiUrl is something unexpected
+  // Default to Railway staging for safety
+  console.warn("[FileUpload] Unexpected apiUrl format:", apiUrl, "- defaulting to Railway staging");
+  return "https://reflexion-staging.up.railway.app";
+}
+
 export function useFileUpload({
   initialBlocks = [],
   apiUrl = "http://localhost:8080",
@@ -102,23 +165,8 @@ export function useFileUpload({
 
       // For file uploads, we need to call the backend directly, not through Next.js proxy
       // The Next.js proxy can't handle multipart/form-data file uploads
-      let uploadApiUrl = apiUrl;
-      if (apiUrl.startsWith("/")) {
-        // apiUrl is relative (e.g., "/api"), so we're using Next.js proxy
-        // For file uploads, we need the direct backend URL
-        if (typeof window !== 'undefined') {
-          const hostname = window.location.hostname;
-          if (hostname.includes('railway.app') || hostname.includes('reflexion-ui')) {
-            uploadApiUrl = "https://reflexion-staging.up.railway.app";
-          } else {
-            uploadApiUrl = "http://localhost:8080";
-          }
-          console.log("[FileUpload] Bypassing Next.js proxy for file upload, using direct backend URL:", uploadApiUrl);
-        } else {
-          uploadApiUrl = process.env.NEXT_PUBLIC_API_URL || "https://reflexion-staging.up.railway.app";
-        }
-      }
-
+      // ALWAYS bypass proxy for file uploads to avoid issues
+      const uploadApiUrl = getDirectBackendUrl(apiUrl);
       const uploadUrl = `${uploadApiUrl}/documents/upload`;
       console.log("[FileUpload] Sending POST request to:", uploadUrl);
       console.log("[FileUpload] Headers:", Object.keys(headers));
@@ -193,29 +241,8 @@ export function useFileUpload({
       setFolderUploadProgress({ total: files?.length || 1, completed: 0, failed: 0 });
 
       // For file uploads, we need to call the backend directly, not through Next.js proxy
-      // The Next.js proxy can't handle multipart/form-data file uploads (it tries to read body as text)
-      // If apiUrl is relative (starts with /), it's going through Next.js proxy - use direct backend URL instead
-      let uploadApiUrl = apiUrl;
-      if (apiUrl.startsWith("/")) {
-        // apiUrl is relative (e.g., "/api"), so we're using Next.js proxy
-        // For file uploads, we need the direct backend URL
-        // Try to get it from window location or use default staging URL
-        if (typeof window !== 'undefined') {
-          // If we're on staging frontend, backend is at reflexion-staging.up.railway.app
-          // If we're on localhost, backend is at localhost:8080
-          const hostname = window.location.hostname;
-          if (hostname.includes('railway.app') || hostname.includes('reflexion-ui')) {
-            uploadApiUrl = "https://reflexion-staging.up.railway.app";
-          } else {
-            uploadApiUrl = "http://localhost:8080";
-          }
-          console.log("[FileUpload] Bypassing Next.js proxy for file upload, using direct backend URL:", uploadApiUrl);
-        } else {
-          // Server-side: use environment variable or default
-          uploadApiUrl = process.env.NEXT_PUBLIC_API_URL || "https://reflexion-staging.up.railway.app";
-        }
-      }
-
+      // The Next.js proxy can't handle multipart/form-data file uploads
+      const uploadApiUrl = getDirectBackendUrl(apiUrl);
       const uploadUrl = `${uploadApiUrl}/artifacts/upload-folder`;
       console.log("[FileUpload] Sending POST request to:", uploadUrl);
       console.log("[FileUpload] Headers:", Object.keys(headers));
