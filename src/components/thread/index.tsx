@@ -537,12 +537,11 @@ export function Thread({ embedded, className, hideArtifacts }: ThreadProps = {})
           <StickToBottom className="relative flex-1 overflow-hidden min-h-0" style={{ maxHeight: '100%', height: '100%' }}>
             <StickyToBottomContent
               className={cn(
-                "absolute inset-0 overflow-y-auto px-4 [&::-webkit-scrollbar]:w-1.5 [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:bg-gray-300 [&::-webkit-scrollbar-track]:bg-transparent",
-                !chatStarted && "mt-[25vh] flex flex-col items-stretch",
-                chatStarted && "grid grid-rows-[1fr_auto]",
+                "px-4 [&::-webkit-scrollbar]:w-1.5 [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:bg-gray-300 [&::-webkit-scrollbar-track]:bg-transparent",
+                !chatStarted && "mt-[25vh]",
               )}
               contentClassName="pt-8 pb-16 max-w-3xl mx-auto flex flex-col gap-4 w-full"
-              style={{ maxHeight: '100%', overflow: 'hidden' }}
+              style={{ maxHeight: '100%', height: '100%' }}
               content={
                 <>
                   {safeMessages
