@@ -153,15 +153,14 @@ export function EnrichmentApproval({
     headers: Record<string, string>
   ) => {
     try {
-      const formData = new FormData();
-      if (threadId) {
-        formData.append("thread_id", threadId);
-      }
-
-      const response = await fetch(`${apiUrl}/artifacts/${artifactId}/enrich`, {
+      // Use JSON endpoint instead of FormData to avoid Next.js proxy issues
+      // The /enrichment endpoint accepts JSON and works through the proxy
+      const body = threadId ? { thread_id: threadId, trigger: true } : { trigger: true };
+      
+      const response = await fetch(`${apiUrl}/artifacts/${artifactId}/enrichment${threadId ? `?thread_id=${threadId}` : ''}`, {
         method: "POST",
-        headers,
-        body: formData,
+        headers: { ...headers, "Content-Type": "application/json" },
+        body: JSON.stringify(body),
       });
 
       if (response.ok) {
