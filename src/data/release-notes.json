@@ -4,7 +4,7 @@
         "version": "1.5.0",
         "date": "2026-01-26",
         "title": "Harmonized Artifact Ingestion & Enrichment Workflow",
-        "description": "Major release completing Issue #12 - unified artifact ingestion with folder uploads, automatic enrichment extraction, and streamlined approval workflow. Enhanced workbench layout for better space utilization.",
+        "description": "Unify save_external_context and upload_document flows into a single, consistent artifact ingestion system. Users can now upload folders (ZIP or multiple files), automatically extract enrichment metadata, approve artifact type mappings, and seamlessly integrate documents into the Knowledge Graph. This release completes Issue #12 with a streamlined workflow from upload to KG integration.",
         "features": [
             {
                 "name": "Folder Upload Support",
