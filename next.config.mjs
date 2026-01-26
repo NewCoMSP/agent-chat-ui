@@ -25,6 +25,22 @@ const nextConfig = {
       exclude: ['error', 'warn'],
     } : false,
   },
+  // Headers for NextAuth to handle proxy scenarios
+  async headers() {
+    return [
+      {
+        source: '/api/auth/:path*',
+        headers: [
+          // Ensure proper protocol forwarding if behind a proxy
+          ...(process.env.NEXTAUTH_URL?.startsWith('https://') ? [
+            { key: 'X-Forwarded-Proto', value: 'https' },
+          ] : [
+            { key: 'X-Forwarded-Proto', value: 'http' },
+          ]),
+        ],
+      },
+    ];
+  },
 };
 
 export default nextConfig;

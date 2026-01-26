@@ -143,6 +143,13 @@ export function WorldMapView() {
             const res = await fetch(url, { headers });
             if (res.ok) {
                 const diff = await res.json();
+                console.log('[WorldMapView] Fetched diff data:', {
+                    version1: v1,
+                    version2: v2,
+                    diff: diff,
+                    diffNodes: diff.diff?.nodes?.length || 0,
+                    summary: diff.summary
+                });
                 setDiffData(diff);
             } else {
                 console.error('Diff fetch failed:', await res.text());
@@ -163,7 +170,9 @@ export function WorldMapView() {
             if (orgContext) headers['X-Organization-Context'] = orgContext;
 
             let url = threadId ? `/api/kg-data?thread_id=${threadId}` : '/api/kg-data';
-            if (isFocusMode) {
+            // When viewing with diff, disable focus mode to show all nodes (including newly added ones)
+            const useFocus = isFocusMode && !preserveDiff;
+            if (useFocus) {
                 url += threadId ? `&focus=true` : `?focus=true`;
             }
             if (version) {
@@ -173,6 +182,7 @@ export function WorldMapView() {
                 setActiveVersion(null);
             }
 
+            console.log('[WorldMapView] Fetching data:', { url, preserveDiff, useFocus, version });
             const res = await fetch(url, { headers });
             if (!res.ok) throw new Error('Failed to fetch graph data');
             const json = await res.json();
@@ -241,13 +251,123 @@ export function WorldMapView() {
         const links = data.links.map(d => ({ ...d }));
         
         // If we have diff data, merge it into nodes for visualization
-        if (diffData && diffData.diff) {
+        // Note: We only show nodes that exist in the current version (version 2)
+        // Removed nodes are filtered out since they don't exist in version 2
+        if (diffData && diffData.diff && diffData.diff.nodes) {
+            console.log('[WorldMapView] Applying diff visualization:', {
+                diffDataStructure: {
+                    hasDiff: !!diffData.diff,
+                    hasNodes: !!diffData.diff.nodes,
+                    nodesLength: diffData.diff.nodes?.length,
+                    summary: diffData.summary
+                },
+                diffNodes: diffData.diff.nodes.length,
+                currentNodes: nodes.length,
+                sampleDiffNode: diffData.diff.nodes[0],
+                sampleCurrentNode: nodes[0]
+            });
+            
+            // Create maps for both ID and name matching (fallback)
             const diffNodesById = new Map(diffData.diff.nodes.map((n: any) => [n.id, n]));
+            const diffNodesByName = new Map(diffData.diff.nodes.map((n: any) => [n.name || n.label, n]));
+            
+            // Log detailed structure
+            const sampleDiffNode = diffData.diff.nodes[0];
+            const sampleCurrentNode = nodes[0];
+            console.log('[WorldMapView] Sample diff node structure:', {
+                id: sampleDiffNode?.id,
+                name: sampleDiffNode?.name,
+                label: sampleDiffNode?.label,
+                diff_status: sampleDiffNode?.diff_status,
+                keys: sampleDiffNode ? Object.keys(sampleDiffNode) : []
+            });
+            console.log('[WorldMapView] Sample current node structure:', {
+                id: sampleCurrentNode?.id,
+                name: sampleCurrentNode?.name,
+                label: sampleCurrentNode?.label,
+                keys: sampleCurrentNode ? Object.keys(sampleCurrentNode) : []
+            });
+            
+            console.log('[WorldMapView] Diff node IDs (first 10):', Array.from(diffNodesById.keys()).slice(0, 10));
+            console.log('[WorldMapView] Diff node names (first 10):', Array.from(diffNodesByName.keys()).slice(0, 10));
+            console.log('[WorldMapView] Current node IDs (first 10):', nodes.map(n => n.id).slice(0, 10));
+            console.log('[WorldMapView] Current node names (first 10):', nodes.map(n => n.name).slice(0, 10));
+            
+            // Check for ID matches
+            const matchingIds = nodes.filter(n => diffNodesById.has(n.id)).map(n => n.id);
+            const matchingNames = nodes.filter(n => n.name && diffNodesByName.has(n.name)).map(n => n.name);
+            console.log('[WorldMapView] Matching IDs:', matchingIds.slice(0, 10));
+            console.log('[WorldMapView] Matching names:', matchingNames.slice(0, 10));
+            
+            // Check all diff nodes with their status
+            const diffNodesWithStatus = diffData.diff.nodes.filter((n: any) => n.diff_status).map((n: any) => ({
+                id: n.id,
+                name: n.name || n.label,
+                status: n.diff_status,
+                fullNode: n
+            }));
+            console.log('[WorldMapView] Diff nodes with status:', diffNodesWithStatus);
+            console.log('[WorldMapView] Total diff nodes with status:', diffNodesWithStatus.length);
+            
+            // Check if these nodes exist in current nodes
+            diffNodesWithStatus.forEach((diffNode: any) => {
+                const existsInCurrent = nodes.find(n => n.id === diffNode.id);
+                console.log(`[WorldMapView] Diff node "${diffNode.id}" (${diffNode.status}):`, {
+                    existsInCurrent: !!existsInCurrent,
+                    currentNodeId: existsInCurrent?.id,
+                    willBeApplied: existsInCurrent && diffNode.status !== 'removed'
+                });
+            });
+            
+            let matchedCount = 0;
             nodes.forEach(node => {
-                const diffNode = diffNodesById.get(node.id) as Node | undefined;
-                if (diffNode && diffNode.diff_status) {
-                    node.diff_status = diffNode.diff_status;
+                // Try to match by ID first, then by name as fallback
+                let diffNode = diffNodesById.get(node.id) as Node | undefined;
+                if (!diffNode && node.name) {
+                    diffNode = diffNodesByName.get(node.name) as Node | undefined;
                 }
+                
+                if (diffNode) {
+                    // Log what we found
+                    if (diffNode.diff_status) {
+                        console.log(`[WorldMapView] Found diff node for "${node.id}":`, {
+                            hasDiffStatus: !!diffNode.diff_status,
+                            diffStatus: diffNode.diff_status,
+                            willApply: diffNode.diff_status !== 'removed'
+                        });
+                    }
+                    
+                    // Only apply diff_status for nodes that exist in current version
+                    // Skip "removed" status since those nodes aren't in the current data
+                    if (diffNode.diff_status && diffNode.diff_status !== 'removed') {
+                        node.diff_status = diffNode.diff_status;
+                        matchedCount++;
+                        console.log(`[WorldMapView] ✓ Applied diff_status "${diffNode.diff_status}" to node "${node.id}" (${node.name})`);
+                    } else if (diffNode.diff_status === 'removed') {
+                        console.log(`[WorldMapView] ✗ Skipped removed node "${node.id}" (should not be in current data)`);
+                    } else {
+                        console.log(`[WorldMapView] ⚠ Diff node found for "${node.id}" but no diff_status property`);
+                    }
+                }
+            });
+            
+            // Log for debugging
+            const addedNodes = nodes.filter(n => (n as any).diff_status === 'added');
+            const modifiedNodes = nodes.filter(n => (n as any).diff_status === 'modified');
+            console.log('[WorldMapView] Diff visualization applied:', {
+                total_nodes: nodes.length,
+                matched_nodes: matchedCount,
+                added: addedNodes.length,
+                modified: modifiedNodes.length,
+                added_ids: addedNodes.map(n => `${n.id} (${n.name})`),
+                modified_ids: modifiedNodes.map(n => `${n.id} (${n.name})`)
+            });
+        } else {
+            console.log('[WorldMapView] No diff data available:', { 
+                diffData: diffData, 
+                hasDiff: !!diffData?.diff,
+                hasDiffNodes: !!diffData?.diff?.nodes,
+                diffNodesLength: diffData?.diff?.nodes?.length
             });
         }
 
@@ -256,8 +376,27 @@ export function WorldMapView() {
             inactive_nodes: nodes.filter(n => n.is_active === false).map(n => n.id)
         });
 
+        // Create a Set of valid node IDs for fast lookup
+        const validNodeIds = new Set(nodes.map(n => n.id));
+        
+        // Filter links to only include those where both source and target nodes exist
+        const validLinks = links.filter(link => {
+            const sourceId = typeof link.source === 'string' ? link.source : (link.source as Node)?.id;
+            const targetId = typeof link.target === 'string' ? link.target : (link.target as Node)?.id;
+            const sourceExists = sourceId && validNodeIds.has(sourceId);
+            const targetExists = targetId && validNodeIds.has(targetId);
+            
+            if (!sourceExists || !targetExists) {
+                console.warn(`[WorldMapView] Filtering out link: ${sourceId} -> ${targetId} (missing nodes)`);
+                return false;
+            }
+            return true;
+        });
+        
+        console.log(`[WorldMapView] Filtered links: ${links.length} -> ${validLinks.length} (removed ${links.length - validLinks.length} invalid links)`);
+
         const simulation = d3.forceSimulation<Node>(nodes)
-            .force('link', d3.forceLink<Node, Link>(links).id(d => d.id).distance(150))
+            .force('link', d3.forceLink<Node, Link>(validLinks).id(d => d.id).distance(150))
             .force('charge', d3.forceManyBody().strength(-800))
             .force('center', d3.forceCenter(width / 2, height / 2))
             .force('collide', d3.forceCollide().radius(60));
@@ -265,7 +404,7 @@ export function WorldMapView() {
         const link = g.append('g')
             .attr('class', 'links')
             .selectAll('line')
-            .data(links)
+            .data(validLinks)
             .enter().append('line')
             .attr('stroke', '#888')
             .attr('stroke-width', 1.5)
@@ -579,8 +718,15 @@ export function WorldMapView() {
                                                 if (compareVersion2) fetchDiff(v.id, compareVersion2);
                                             }}
                                         >
-                                            <span className="text-xs font-medium text-foreground">{v.id}</span>
-                                            <span className="text-[10px] text-muted-foreground block">{v.timestamp}</span>
+                                            <span className="text-xs font-medium text-foreground">
+                                                {v.message || v.id}
+                                            </span>
+                                            <div className="flex items-center justify-between mt-0.5">
+                                                <span className="text-[10px] text-muted-foreground">{v.timestamp}</span>
+                                                {v.sha && (
+                                                    <span className="text-[9px] text-muted-foreground/60 font-mono">{v.sha}</span>
+                                                )}
+                                            </div>
                                         </div>
                                     ))}
                                 </div>
@@ -612,8 +758,15 @@ export function WorldMapView() {
                                                 if (compareVersion1) fetchDiff(compareVersion1, v.id);
                                             }}
                                         >
-                                            <span className="text-xs font-medium text-foreground">{v.id}</span>
-                                            <span className="text-[10px] text-muted-foreground block">{v.timestamp}</span>
+                                            <span className="text-xs font-medium text-foreground">
+                                                {v.message || v.id}
+                                            </span>
+                                            <div className="flex items-center justify-between mt-0.5">
+                                                <span className="text-[10px] text-muted-foreground">{v.timestamp}</span>
+                                                {v.sha && (
+                                                    <span className="text-[9px] text-muted-foreground/60 font-mono">{v.sha}</span>
+                                                )}
+                                            </div>
                                         </div>
                                     ))}
                                 </div>
@@ -652,9 +805,16 @@ export function WorldMapView() {
                                         variant="outline"
                                         size="sm"
                                         className="w-full mt-3 text-[10px] h-7 border-border"
-                                        onClick={() => {
+                                        onClick={async () => {
                                             // Load version2 with diff visualization
                                             const version = compareVersion2 === "current" ? undefined : (compareVersion2 || undefined);
+                                            // Ensure diff data is preserved by setting compareMode
+                                            setCompareMode(true);
+                                            // Fetch the diff again to ensure it's fresh
+                                            if (compareVersion1 && compareVersion2) {
+                                                await fetchDiff(compareVersion1, compareVersion2);
+                                            }
+                                            // Then load version 2 with diff preserved
                                             fetchData(version, true);
                                             setActiveVersion(compareVersion2 === "current" ? null : compareVersion2);
                                         }}
@@ -689,8 +849,15 @@ export function WorldMapView() {
                                     )}
                                     onClick={() => fetchData(v.id)}
                                 >
-                                    <span className="text-xs font-medium text-foreground">{v.id}</span>
-                                    <span className="text-[10px] text-muted-foreground">{v.timestamp}</span>
+                                    <span className="text-xs font-medium text-foreground">
+                                        {v.message || v.id}
+                                    </span>
+                                    <div className="flex items-center justify-between">
+                                        <span className="text-[10px] text-muted-foreground">{v.timestamp}</span>
+                                        {v.sha && (
+                                            <span className="text-[9px] text-muted-foreground/60 font-mono">{v.sha}</span>
+                                        )}
+                                    </div>
                                 </div>
                             ))}
                         </div>

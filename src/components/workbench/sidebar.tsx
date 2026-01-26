@@ -21,6 +21,19 @@ interface Project {
     name: string;
 }
 
+// Generate a more meaningful project name from thread ID
+function formatProjectName(project: Project): string {
+    // If name is already meaningful (not just a UUID), use it
+    if (project.name && project.name !== project.id && !project.name.match(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i)) {
+        return project.name;
+    }
+    
+    // If name is a UUID or same as ID, generate a friendly name
+    // Extract first 8 characters of UUID for readability
+    const shortId = project.id.substring(0, 8);
+    return `Project ${shortId}`;
+}
+
 // Removed static PROJECT_LINKS
 
 const PRODUCT_LINKS = [
@@ -113,7 +126,7 @@ export function Sidebar() {
                                         )}
                                     >
                                         <FileText className={cn("mr-3 h-4 w-4 shrink-0 transition-transform group-hover:scale-110", isActive ? "text-primary" : "text-muted-foreground")} />
-                                        <span className="truncate">{project.name}</span>
+                                        <span className="truncate" title={project.id}>{formatProjectName(project)}</span>
                                     </button>
                                 );
                             })

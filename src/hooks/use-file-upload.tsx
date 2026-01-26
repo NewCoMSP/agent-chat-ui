@@ -23,10 +23,24 @@ export const SUPPORTED_IMAGE_TYPES = [
 // Document upload result from backend
 export interface DocumentUploadResult {
   document_id: string;
+  artifact_id?: string; // Unified naming (Issue #12)
   filename: string;
   mime_type: string;
   sha256: string;
   created_at: string;
+}
+
+// Folder upload result from backend (Issue #12)
+export interface FolderUploadResult {
+  artifacts: Array<{
+    artifact_id: string;
+    filename: string;
+    status: "success" | "error";
+    error?: string;
+  }>;
+  total: number;
+  successful: number;
+  failed: number;
 }
 
 interface UseFileUploadOptions {
@@ -49,6 +63,12 @@ export function useFileUpload({
   const [pendingDocuments, setPendingDocuments] = useState<File[]>([]);
   const [uploadedDocuments, setUploadedDocuments] = useState<DocumentUploadResult[]>([]);
   const [uploading, setUploading] = useState(false);
+  const [folderUploading, setFolderUploading] = useState(false);
+  const [folderUploadProgress, setFolderUploadProgress] = useState<{
+    total: number;
+    completed: number;
+    failed: number;
+  } | null>(null);
   const dropRef = useRef<HTMLDivElement>(null);
   const [dragOver, setDragOver] = useState(false);
   const dragCounter = useRef(0);
@@ -56,6 +76,7 @@ export function useFileUpload({
   // Upload PDF to backend and get document_id
   const uploadDocument = async (file: File): Promise<DocumentUploadResult | null> => {
     try {
+      console.log("[FileUpload] Starting uploadDocument for:", file.name, "Type:", file.type, "Size:", file.size);
       const formData = new FormData();
       formData.append("file", file);
       if (threadId) {
@@ -69,6 +90,8 @@ export function useFileUpload({
       const token = session?.user?.idToken || getApiKey();
       if (token) {
         headers["Authorization"] = `Bearer ${token}`;
+      } else {
+        console.warn("[FileUpload] No authentication token available");
       }
       
       // Add organization context if available
@@ -77,11 +100,17 @@ export function useFileUpload({
         headers['X-Organization-Context'] = orgContext;
       }
 
-      const response = await fetch(`${apiUrl}/documents/upload`, {
+      const uploadUrl = `${apiUrl}/documents/upload`;
+      console.log("[FileUpload] Sending POST request to:", uploadUrl);
+      console.log("[FileUpload] Headers:", Object.keys(headers));
+      
+      const response = await fetch(uploadUrl, {
         method: "POST",
         headers,
         body: formData,
       });
+      
+      console.log("[FileUpload] Response status:", response.status, response.statusText);
 
       if (!response.ok) {
         const error = await response.json().catch(() => ({ error: "Upload failed" }));
@@ -89,11 +118,95 @@ export function useFileUpload({
       }
 
       const result: DocumentUploadResult = await response.json();
+      // Support both document_id and artifact_id (Issue #12)
+      if (result.artifact_id && !result.document_id) {
+        result.document_id = result.artifact_id;
+      }
       return result;
     } catch (error) {
       console.error("[FileUpload] Document upload failed:", error);
       toast.error(`Failed to upload ${file.name}: ${error instanceof Error ? error.message : "Unknown error"}`);
       return null;
+    }
+  };
+
+  // Upload folder (multiple files or zip) to backend (Issue #12 - Phase 2)
+  const uploadFolder = async (
+    files: File[] | null,
+    zipFile: File | null
+  ): Promise<FolderUploadResult | null> => {
+    try {
+      console.log("[FileUpload] Starting uploadFolder - zipFile:", zipFile?.name, "files:", files?.length);
+      const formData = new FormData();
+      
+      if (zipFile) {
+        console.log("[FileUpload] Adding zip file:", zipFile.name, "Size:", zipFile.size);
+        formData.append("zip_file", zipFile);
+      } else if (files && files.length > 0) {
+        console.log("[FileUpload] Adding", files.length, "file(s)");
+        files.forEach((file) => {
+          formData.append("files", file);
+        });
+      } else {
+        throw new Error("No files provided");
+      }
+
+      if (threadId) {
+        formData.append("thread_id", threadId);
+      }
+
+      // Build authentication headers
+      const headers: Record<string, string> = {};
+      
+      const token = session?.user?.idToken || getApiKey();
+      if (token) {
+        headers["Authorization"] = `Bearer ${token}`;
+      } else {
+        console.warn("[FileUpload] No authentication token available for folder upload");
+      }
+      
+      const orgContext = typeof window !== 'undefined' ? localStorage.getItem('reflexion_org_context') : null;
+      if (orgContext) {
+        headers['X-Organization-Context'] = orgContext;
+      }
+
+      setFolderUploading(true);
+      setFolderUploadProgress({ total: files?.length || 1, completed: 0, failed: 0 });
+
+      const uploadUrl = `${apiUrl}/artifacts/upload-folder`;
+      console.log("[FileUpload] Sending POST request to:", uploadUrl);
+      console.log("[FileUpload] Headers:", Object.keys(headers));
+      
+      const response = await fetch(uploadUrl, {
+        method: "POST",
+        headers,
+        body: formData,
+      });
+      
+      console.log("[FileUpload] Response status:", response.status, response.statusText);
+
+      if (!response.ok) {
+        const error = await response.json().catch(() => ({ error: "Upload failed" }));
+        throw new Error(error.error || `Upload failed: ${response.statusText}`);
+      }
+
+      const result: FolderUploadResult = await response.json();
+      
+      setFolderUploadProgress({
+        total: result.total,
+        completed: result.successful,
+        failed: result.failed,
+      });
+
+      return result;
+    } catch (error) {
+      console.error("[FileUpload] Folder upload failed:", error);
+      toast.error(`Failed to upload folder: ${error instanceof Error ? error.message : "Unknown error"}`);
+      return null;
+    } finally {
+      setFolderUploading(false);
+      // Clear progress after a delay
+      setTimeout(() => setFolderUploadProgress(null), 3000);
     }
   };
 
@@ -114,17 +227,27 @@ export function useFileUpload({
   };
 
   const handleFileUpload = async (e: ChangeEvent<HTMLInputElement>) => {
+    console.log("[FileUpload] handleFileUpload called");
     const files = e.target.files;
-    if (!files) return;
+    if (!files) {
+      console.log("[FileUpload] No files in event");
+      return;
+    }
     const fileArray = Array.from(files);
+    console.log("[FileUpload] Files selected:", fileArray.map(f => ({ name: f.name, type: f.type, size: f.size })));
     const validFiles = fileArray.filter((file) =>
       SUPPORTED_FILE_TYPES.includes(file.type),
     );
     const invalidFiles = fileArray.filter(
       (file) => !SUPPORTED_FILE_TYPES.includes(file.type),
     );
+    console.log("[FileUpload] Valid files:", validFiles.length, "Invalid files:", invalidFiles.length);
+    if (invalidFiles.length > 0) {
+      console.log("[FileUpload] Invalid file types:", invalidFiles.map(f => ({ name: f.name, type: f.type })));
+    }
     const duplicateFiles = validFiles.filter(isDuplicate);
     const uniqueFiles = validFiles.filter((file) => !isDuplicate(file));
+    console.log("[FileUpload] Unique files to process:", uniqueFiles.length);
 
     if (invalidFiles.length > 0) {
       toast.error(
@@ -140,15 +263,18 @@ export function useFileUpload({
     // Separate images from PDFs
     const imageFiles = uniqueFiles.filter((f) => SUPPORTED_IMAGE_TYPES.includes(f.type));
     const pdfFiles = uniqueFiles.filter((f) => f.type === "application/pdf");
+    console.log("[FileUpload] Image files:", imageFiles.length, "PDF files:", pdfFiles.length);
 
     // Process images as content blocks (existing behavior)
     if (imageFiles.length > 0) {
+      console.log("[FileUpload] Processing", imageFiles.length, "image(s) as content blocks");
       const newBlocks = await Promise.all(imageFiles.map(fileToContentBlock));
       setContentBlocks((prev) => [...prev, ...newBlocks]);
     }
 
     // Upload PDFs to backend
     if (pdfFiles.length > 0) {
+      console.log("[FileUpload] Starting upload for", pdfFiles.length, "PDF file(s)");
       setUploading(true);
       setPendingDocuments((prev) => [...prev, ...pdfFiles]);
       
@@ -409,7 +535,10 @@ export function useFileUpload({
     pendingDocuments,
     uploadedDocuments,
     uploading,
+    folderUploading,
+    folderUploadProgress,
     handleFileUpload,
+    uploadFolder,
     dropRef,
     removeBlock,
     removeDocument,

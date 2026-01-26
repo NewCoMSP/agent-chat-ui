@@ -15,9 +15,10 @@ import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip
 import { useQueryState } from "nuqs";
 import { cn } from "@/lib/utils";
 import { useArtifactOpen, ArtifactContent, ArtifactTitle } from "@/components/thread/artifact";
-import { PanelLeft, FileText, Layout, GitGraph } from "lucide-react";
+import { PanelLeft, FileText, Layout, GitGraph, CheckSquare } from "lucide-react";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { ProductPanel } from "@/components/product-panel/ProductPanel";
+import { EnrichmentView } from "./enrichment-view";
 
 export function WorkbenchShell({ children }: { children: React.ReactNode }) {
     const stream = useStreamContext();
@@ -34,6 +35,10 @@ export function WorkbenchShell({ children }: { children: React.ReactNode }) {
 
     const [viewMode, setViewMode] = useQueryState("view", { defaultValue: "map" });
     const [isWorkbenchOpen, setIsWorkbenchOpen] = useState(true);
+    const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
+    const [isAgentPanelOpen, setIsAgentPanelOpen] = useState(true);
+    const [agentPanelHeight, setAgentPanelHeight] = useState(300); // Default height in pixels
+    const [isResizing, setIsResizing] = useState(false);
     const [isArtifactOpen, closeArtifact] = useArtifactOpen();
     const [releaseNotesOpen, setReleaseNotesOpen] = useState(false);
     const router = useRouter();
@@ -51,7 +56,7 @@ export function WorkbenchShell({ children }: { children: React.ReactNode }) {
             console.log(`[WorkbenchShell] Backend synced view to: ${workbenchView}`);
             lastSyncedView.current = workbenchView;
 
-            if (["map", "workflow", "artifacts"].includes(workbenchView)) {
+            if (["map", "workflow", "artifacts", "enrichment"].includes(workbenchView)) {
                 // Internal Sub-view Toggle
                 setViewMode(workbenchView);
                 closeArtifact();
@@ -83,13 +88,79 @@ export function WorkbenchShell({ children }: { children: React.ReactNode }) {
         }
     }, [viewMode, stream]);
 
+    // Handle panel resizing
+    const handleMouseDown = (e: React.MouseEvent) => {
+        e.preventDefault();
+        setIsResizing(true);
+    };
+
+    useEffect(() => {
+        const handleMouseMove = (e: MouseEvent) => {
+            if (!isResizing) return;
+            
+            const container = document.querySelector('[data-workbench-container]') as HTMLElement;
+            if (!container) return;
+            
+            const containerRect = container.getBoundingClientRect();
+            const containerHeight = containerRect.height;
+            const headerHeight = 56; // h-14 = 56px
+            const availableHeight = containerHeight - headerHeight;
+            
+            // Calculate new agent panel height from bottom
+            const mouseY = e.clientY;
+            const relativeY = containerRect.bottom - mouseY;
+            
+            // Constrain between min and max heights
+            const minHeight = 150; // Minimum 150px for agent panel
+            const maxHeight = availableHeight - 200; // Leave at least 200px for workbench
+            const newHeight = Math.max(minHeight, Math.min(maxHeight, relativeY));
+            
+            setAgentPanelHeight(newHeight);
+        };
+
+        const handleMouseUp = () => {
+            setIsResizing(false);
+        };
+
+        if (isResizing) {
+            document.addEventListener('mousemove', handleMouseMove);
+            document.addEventListener('mouseup', handleMouseUp);
+            document.body.style.cursor = 'row-resize';
+            document.body.style.userSelect = 'none';
+        }
+
+        return () => {
+            document.removeEventListener('mousemove', handleMouseMove);
+            document.removeEventListener('mouseup', handleMouseUp);
+            document.body.style.cursor = '';
+            document.body.style.userSelect = '';
+        };
+    }, [isResizing]);
+
     return (
         <div className="flex h-screen bg-background text-foreground overflow-hidden">
-            {/* Sidebar */}
-            <Sidebar />
+            {/* Sidebar - Collapsible */}
+            <div className={cn(
+                "relative transition-all duration-300 border-r bg-muted/20 flex flex-col h-full overflow-hidden",
+                isSidebarCollapsed ? "w-0 border-0" : "w-64"
+            )}>
+                {!isSidebarCollapsed && <Sidebar />}
+                {/* Collapse Toggle Button */}
+                <Button
+                    variant="ghost"
+                    size="icon"
+                    className={cn(
+                        "absolute top-4 z-50 h-6 w-6 rounded-full border bg-background shadow-md hover:bg-muted transition-all",
+                        isSidebarCollapsed ? "-right-3" : "-right-3"
+                    )}
+                    onClick={() => setIsSidebarCollapsed(!isSidebarCollapsed)}
+                >
+                    <PanelLeft className={cn("h-3.5 w-3.5 transition-transform", isSidebarCollapsed && "rotate-180")} />
+                </Button>
+            </div>
 
             {/* Main Content Area */}
-            <div className="flex-1 flex flex-col h-full min-w-0">
+            <div className="flex-1 flex flex-col h-full min-w-0" data-workbench-container>
                 {/* Level 1: Global Context Header */}
                 <header className="h-14 border-b flex items-center justify-between px-6 bg-background z-20 shrink-0">
                     <div className="flex items-center gap-4">
@@ -160,7 +231,7 @@ export function WorkbenchShell({ children }: { children: React.ReactNode }) {
                             </TooltipContent>
                         </Tooltip>
 
-                        {/* Workbench Sidebar Trigger */}
+                        {/* Workbench Panel Trigger */}
                         <Tooltip>
                             <TooltipTrigger asChild>
                                 <Button
@@ -172,7 +243,7 @@ export function WorkbenchShell({ children }: { children: React.ReactNode }) {
                                         isWorkbenchOpen && "bg-muted text-foreground"
                                     )}
                                 >
-                                    <PanelRight className="w-4 h-4" />
+                                    <Layout className="w-4 h-4" />
                                     {stream.isLoading && (
                                         <span className="absolute top-2 right-2 flex h-2 w-2">
                                             <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-primary opacity-75"></span>
@@ -181,23 +252,37 @@ export function WorkbenchShell({ children }: { children: React.ReactNode }) {
                                     )}
                                 </Button>
                             </TooltipTrigger>
-                            <TooltipContent>Toggle Workbench Panel</TooltipContent>
+                            <TooltipContent>Toggle Workbench</TooltipContent>
+                        </Tooltip>
+
+                        {/* Agent Panel Toggle */}
+                        <Tooltip>
+                            <TooltipTrigger asChild>
+                                <Button
+                                    variant="ghost"
+                                    size="icon"
+                                    onClick={() => setIsAgentPanelOpen(!isAgentPanelOpen)}
+                                    className={cn(
+                                        "h-9 w-9 text-muted-foreground hover:text-foreground relative transition-all",
+                                        isAgentPanelOpen && "bg-muted text-foreground"
+                                    )}
+                                >
+                                    <MessageSquare className="w-4 h-4" />
+                                </Button>
+                            </TooltipTrigger>
+                            <TooltipContent>Toggle Agent Chat</TooltipContent>
                         </Tooltip>
 
                         <UserMenu />
                     </div>
                 </header>
 
-                {/* Level 3: Content Stage */}
-                <div className="flex-1 flex overflow-hidden">
-                    <main className="flex-1 overflow-auto relative bg-background custom-scrollbar">
-                        <div className="h-full w-full">
-                            <Thread embedded hideArtifacts />
-                        </div>
-                    </main>
-
-                    {isWorkbenchOpen && (
-                        <aside className="w-[45%] min-w-[500px] border-l bg-background flex flex-col animate-in slide-in-from-right duration-300 shadow-xl z-30">
+                {/* Level 3: Content Stage - Workbench takes main area */}
+                <div className="flex-1 flex flex-col overflow-hidden">
+                    {/* Workbench Main Area */}
+                    <div className="flex-1 flex overflow-hidden" style={{ height: isAgentPanelOpen ? `calc(100% - ${agentPanelHeight}px)` : '100%' }}>
+                        {isWorkbenchOpen && (
+                            <aside className="flex-1 border-l bg-background flex flex-col shadow-xl z-30">
                             {/* Workbench Tabs - Now inside the Right Pane */}
                             <div className="h-12 border-b flex items-center px-6 bg-muted/10 shrink-0">
                                 <div className="flex items-center space-x-1">
@@ -237,6 +322,18 @@ export function WorkbenchShell({ children }: { children: React.ReactNode }) {
                                         <FileText className="w-3.5 h-3.5" />
                                         Artifacts
                                     </Button>
+                                    <Button
+                                        variant="ghost"
+                                        size="sm"
+                                        className={cn(
+                                            "h-8 px-3 gap-2 text-xs font-medium transition-all",
+                                            viewMode === "enrichment" ? "bg-background text-foreground shadow-sm ring-1 ring-border" : "text-muted-foreground hover:bg-muted/50 hover:text-foreground"
+                                        )}
+                                        onClick={() => { setViewMode("enrichment"); closeArtifact(); stream.setWorkbenchView("enrichment"); }}
+                                    >
+                                        <CheckSquare className="w-3.5 h-3.5" />
+                                        Enrichment
+                                    </Button>
                                 </div>
                             </div>
 
@@ -256,13 +353,78 @@ export function WorkbenchShell({ children }: { children: React.ReactNode }) {
                                         <ArtifactContent className="max-w-4xl mx-auto bg-background border rounded-lg shadow-sm min-h-[500px]" />
                                     </div>
                                 </div>
+                            ) : viewMode === "enrichment" ? (
+                                <div className="h-full w-full overflow-hidden">
+                                    <EnrichmentView />
+                                </div>
                             ) : (
                                 <div className="h-full w-full overflow-hidden">
                                     {children}
                                 </div>
                             )}
-                        </aside>
+                            </aside>
+                        )}
+                    </div>
+
+                    {/* Resizable Divider */}
+                    {isAgentPanelOpen && (
+                        <div
+                            className={cn(
+                                "h-1 border-t border-b bg-border cursor-row-resize hover:bg-primary/20 transition-colors relative group",
+                                isResizing && "bg-primary/30"
+                            )}
+                            onMouseDown={handleMouseDown}
+                            style={{ minHeight: '4px' }}
+                        >
+                            <div className="absolute inset-x-0 top-1/2 -translate-y-1/2 h-1 flex items-center justify-center">
+                                <div className="h-0.5 w-16 bg-muted-foreground/30 group-hover:bg-primary/50 rounded-full transition-colors" />
+                            </div>
+                        </div>
                     )}
+
+                    {/* Agent Chat Panel - Bottom */}
+                    <div className="relative">
+                        {isAgentPanelOpen ? (
+                            <div 
+                                className={cn(
+                                    "bg-background transition-all duration-300 flex flex-col",
+                                    !isResizing && "transition-all"
+                                )}
+                                style={{ height: `${agentPanelHeight}px` }}
+                            >
+                                {/* Agent Panel Header */}
+                                <div className="h-10 border-b flex items-center justify-between px-4 bg-muted/30 shrink-0">
+                                    <div className="flex items-center gap-2">
+                                        <MessageSquare className="h-3.5 w-3.5 text-muted-foreground" />
+                                        <span className="text-xs font-semibold text-foreground">Agent Chat</span>
+                                    </div>
+                                    <Button
+                                        variant="ghost"
+                                        size="icon"
+                                        className="h-6 w-6"
+                                        onClick={() => setIsAgentPanelOpen(false)}
+                                    >
+                                        <X className="h-3.5 w-3.5" />
+                                    </Button>
+                                </div>
+                                {/* Agent Chat Content */}
+                                <div className="flex-1 min-h-0 bg-background" style={{ height: `${agentPanelHeight - 40}px` }}>
+                                    <Thread embedded hideArtifacts />
+                                </div>
+                            </div>
+                        ) : (
+                            /* Agent Panel Toggle - Show when collapsed */
+                            <Button
+                                variant="ghost"
+                                size="sm"
+                                className="absolute bottom-4 left-1/2 -translate-x-1/2 h-8 px-3 bg-background border shadow-md hover:bg-muted z-50"
+                                onClick={() => setIsAgentPanelOpen(true)}
+                            >
+                                <MessageSquare className="h-3.5 w-3.5 mr-2" />
+                                <span className="text-xs">Show Agent Chat</span>
+                            </Button>
+                        )}
+                    </div>
                 </div>
             </div>
 

@@ -18,7 +18,27 @@ declare module "next-auth/jwt" {
     }
 }
 
+// Get the secret - prefer REFLEXION_JWT_SECRET, fallback to NEXTAUTH_SECRET for backward compatibility
+const authSecret = process.env.REFLEXION_JWT_SECRET || process.env.NEXTAUTH_SECRET;
+
+// Debug logging for environment variables (remove in production)
+if (process.env.NODE_ENV !== 'production') {
+    console.log('[AUTH DEBUG] NEXTAUTH_URL:', process.env.NEXTAUTH_URL || 'NOT SET');
+    console.log('[AUTH DEBUG] AUTH_GOOGLE_ID:', process.env.AUTH_GOOGLE_ID ? 'Set' : 'MISSING');
+    console.log('[AUTH DEBUG] AUTH_GOOGLE_SECRET:', process.env.AUTH_GOOGLE_SECRET ? 'Set' : 'MISSING');
+    console.log('[AUTH DEBUG] REFLEXION_JWT_SECRET:', process.env.REFLEXION_JWT_SECRET ? 'Set' : 'MISSING');
+    console.log('[AUTH DEBUG] NEXTAUTH_SECRET (fallback):', process.env.NEXTAUTH_SECRET ? 'Set' : 'MISSING');
+    console.log('[AUTH DEBUG] Using secret:', authSecret ? 'Set' : 'MISSING - AUTH WILL FAIL');
+}
+
 export const authOptions: NextAuthOptions = {
+    // Explicitly set the base URL for NextAuth
+    // This ensures the callback URL is constructed correctly
+    ...(process.env.NEXTAUTH_URL && { 
+        url: process.env.NEXTAUTH_URL 
+    }),
+    // Use REFLEXION_JWT_SECRET as the primary secret for NextAuth
+    secret: authSecret,
     providers: [
         GoogleProvider({
             clientId: process.env.AUTH_GOOGLE_ID!,
@@ -74,8 +94,8 @@ export const authOptions: NextAuthOptions = {
 
                 // 2. Mint Backend-Compatible Token
                 // Use REFLEXION_JWT_SECRET to match backend validation
-                // Fallback to NEXTAUTH_SECRET if REFLEXION_JWT_SECRET is not set (for local dev)
-                const jwtSecret = process.env.REFLEXION_JWT_SECRET || process.env.NEXTAUTH_SECRET!;
+                // Fallback to NEXTAUTH_SECRET if REFLEXION_JWT_SECRET is not set (for backward compatibility)
+                const jwtSecret = authSecret!;
                 
                 const backendPayload = {
                     sub: userEmail,
@@ -111,8 +131,8 @@ export const authOptions: NextAuthOptions = {
 
                 if (shouldRefresh) {
                     // Use REFLEXION_JWT_SECRET to match backend validation
-                    // Fallback to NEXTAUTH_SECRET if REFLEXION_JWT_SECRET is not set (for local dev)
-                    const jwtSecret = process.env.REFLEXION_JWT_SECRET || process.env.NEXTAUTH_SECRET!;
+                    // Fallback to NEXTAUTH_SECRET if REFLEXION_JWT_SECRET is not set (for backward compatibility)
+                    const jwtSecret = authSecret!;
                     
                     const backendPayload = {
                         sub: token.email,

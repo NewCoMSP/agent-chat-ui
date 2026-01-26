@@ -29,7 +29,7 @@ import {
   Fingerprint,
   LayoutDashboard,
 } from "lucide-react";
-import { useQueryState, parseAsBoolean } from "nuqs";
+import { useQueryState, parseAsBoolean, useQueryStates } from "nuqs";
 import { StickToBottom, useStickToBottomContext } from "use-stick-to-bottom";
 import ThreadHistory from "./history";
 import { toast } from "sonner";
@@ -52,6 +52,7 @@ import {
   useArtifactContext,
 } from "./artifact";
 import { ThemeToggle } from "../theme-toggle";
+import { FolderOpen } from "lucide-react";
 
 import { UserMenu } from "./user-menu";
 
@@ -129,7 +130,10 @@ export function Thread({ embedded, className, hideArtifacts }: ThreadProps = {})
     setContentBlocks,
     uploadedDocuments,
     uploading,
+    folderUploading,
+    folderUploadProgress,
     handleFileUpload,
+    uploadFolder,
     dropRef,
     removeBlock,
     removeDocument,
@@ -138,6 +142,41 @@ export function Thread({ embedded, className, hideArtifacts }: ThreadProps = {})
     handlePaste,
   } = useFileUpload({ apiUrl, threadId });
   const [firstTokenReceived, setFirstTokenReceived] = useState(false);
+  const [processedArtifactIds, setProcessedArtifactIds] = useState<Set<string>>(new Set());
+  
+  // Use URL query params for pending artifacts (shared with workbench)
+  const [pendingArtifactIds, setPendingArtifactIds] = useQueryState<string[]>("pendingArtifacts", {
+    parse: (value) => value ? value.split(",").filter(Boolean) : [],
+    serialize: (value) => value && value.length > 0 ? value.join(",") : null,
+    defaultValue: []
+  });
+
+  // Trigger enrichment approval when new documents are uploaded (Issue #12)
+  useEffect(() => {
+    if (uploadedDocuments.length === 0) return;
+
+    const newArtifactIds = uploadedDocuments
+      .map((d) => d.artifact_id || d.document_id)
+      .filter((id): id is string => !!id && !processedArtifactIds.has(id));
+
+    if (newArtifactIds.length > 0) {
+      // Mark as processed
+      setProcessedArtifactIds((prev) => {
+        const updated = new Set(prev);
+        newArtifactIds.forEach((id) => updated.add(id));
+        return updated;
+      });
+
+      // Small delay to allow backend to process enrichment
+      const timer = setTimeout(() => {
+        setPendingArtifactIds((prev) => [...prev, ...newArtifactIds]);
+        // Switch to enrichment view in workbench
+        stream.setWorkbenchView("enrichment").catch(console.error);
+      }, 1500);
+
+      return () => clearTimeout(timer);
+    }
+  }, [uploadedDocuments, processedArtifactIds]);
 
   const isLargeScreen = useMediaQuery("(min-width: 1024px)");
   const safeMessages = messages ?? [];
@@ -193,9 +232,44 @@ export function Thread({ embedded, className, hideArtifacts }: ThreadProps = {})
     prevMessageLength.current = safeMessages.length;
   }, [safeMessages]);
 
+  const handleFolderUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    console.log("[Thread] handleFolderUpload called");
+    const files = e.target.files;
+    if (!files || files.length === 0) {
+      console.log("[Thread] No files selected");
+      return;
+    }
+
+    console.log("[Thread] Files selected:", files.length, Array.from(files).map(f => `${f.name} (${f.type})`));
+    const fileArray = Array.from(files);
+    const zipFile = fileArray.find((f) => f.name.endsWith(".zip"));
+    const otherFiles = fileArray.filter((f) => !f.name.endsWith(".zip"));
+
+    console.log("[Thread] Calling uploadFolder - zipFile:", zipFile?.name, "otherFiles:", otherFiles.length);
+    const result = await uploadFolder(
+      otherFiles.length > 0 ? otherFiles : null,
+      zipFile || null
+    );
+    console.log("[Thread] uploadFolder result:", result);
+
+    if (result && result.successful > 0) {
+      const artifactIds = result.artifacts
+        .filter((a) => a.status === "success")
+        .map((a) => a.artifact_id);
+      
+      if (artifactIds.length > 0) {
+        setPendingArtifactIds(artifactIds);
+        // Switch to enrichment view in workbench
+        stream.setWorkbenchView("enrichment").catch(console.error);
+      }
+    }
+
+    e.target.value = "";
+  };
+
   const handleSubmit = (e: FormEvent) => {
     e.preventDefault();
-    if ((input.trim().length === 0 && contentBlocks.length === 0 && uploadedDocuments.length === 0) || isLoading || uploading)
+    if ((input.trim().length === 0 && contentBlocks.length === 0 && uploadedDocuments.length === 0) || isLoading || uploading || folderUploading)
       return;
     setFirstTokenReceived(false);
 
@@ -576,23 +650,47 @@ export function Thread({ embedded, className, hideArtifacts }: ThreadProps = {})
                             </Label>
                           </div>
                         </div>
-                        <Label
-                          htmlFor="file-input"
-                          className="flex cursor-pointer items-center gap-2"
-                        >
-                          <Plus className="size-5 text-gray-600" />
-                          <span className="text-sm text-gray-600">
-                            Upload PDF or Image
-                          </span>
-                        </Label>
-                        <input
-                          id="file-input"
-                          type="file"
-                          onChange={handleFileUpload}
-                          multiple
-                          accept="image/jpeg,image/png,image/gif,image/webp,application/pdf"
-                          className="hidden"
-                        />
+                        <div className="flex items-center gap-4">
+                          <Label
+                            htmlFor="file-input"
+                            className="flex cursor-pointer items-center gap-2"
+                          >
+                            <Plus className="size-5 text-gray-600" />
+                            <span className="text-sm text-gray-600">
+                              Upload PDF or Image
+                            </span>
+                          </Label>
+                          <input
+                            id="file-input"
+                            type="file"
+                            onChange={handleFileUpload}
+                            multiple
+                            accept="image/jpeg,image/png,image/gif,image/webp,application/pdf"
+                            className="hidden"
+                          />
+                          <Label
+                            htmlFor="folder-input"
+                            className="flex cursor-pointer items-center gap-2"
+                          >
+                            <FolderOpen className="size-5 text-gray-600" />
+                            <span className="text-sm text-gray-600">
+                              Upload Folder (ZIP)
+                            </span>
+                          </Label>
+                          <input
+                            id="folder-input"
+                            type="file"
+                            onChange={handleFolderUpload}
+                            accept=".zip,application/zip"
+                            className="hidden"
+                          />
+                        </div>
+                        {folderUploading && folderUploadProgress && (
+                          <div className="text-xs text-muted-foreground">
+                            Uploading: {folderUploadProgress.completed} / {folderUploadProgress.total}
+                            {folderUploadProgress.failed > 0 && ` (${folderUploadProgress.failed} failed)`}
+                          </div>
+                        )}
                         {isLoading ? (
                           <Button
                             key="stop"
@@ -608,7 +706,9 @@ export function Thread({ embedded, className, hideArtifacts }: ThreadProps = {})
                             className="ml-auto shadow-md transition-all"
                             disabled={
                               isLoading ||
-                              (!input.trim() && contentBlocks.length === 0)
+                              uploading ||
+                              folderUploading ||
+                              (!input.trim() && contentBlocks.length === 0 && uploadedDocuments.length === 0)
                             }
                           >
                             Send
