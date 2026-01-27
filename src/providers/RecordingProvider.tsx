@@ -19,20 +19,40 @@ export function RecordingProvider({ children }: { children: React.ReactNode }) {
     const stopFn = useRef<(() => void) | null>(null);
 
     const startRecording = async () => {
-        if (!ENABLE_RECORD || isRecording) return;
+        if (!ENABLE_RECORD) {
+            console.warn("Recording is disabled. Set NEXT_PUBLIC_ENABLE_RECORD=true to enable.");
+            alert("Recording is disabled. Set NEXT_PUBLIC_ENABLE_RECORD=true in your environment variables to enable session recording.");
+            return;
+        }
 
-        events.current = [];
-        setIsRecording(true);
+        if (isRecording) {
+            console.warn("Recording is already in progress");
+            return;
+        }
 
-        // Dynamically import rrweb to avoid SSR issues
-        const { record } = await import("rrweb");
-        stopFn.current = record({
-            emit(event: any) {
-                events.current.push(event);
-            },
-        }) || null;
+        try {
+            events.current = [];
 
-        console.log("Session recording started");
+            // Dynamically import rrweb to avoid SSR issues
+            const { record } = await import("rrweb");
+            
+            if (!record) {
+                throw new Error("Failed to import rrweb record function");
+            }
+
+            stopFn.current = record({
+                emit(event: any) {
+                    events.current.push(event);
+                },
+            }) || null;
+
+            setIsRecording(true);
+            console.log("Session recording started");
+        } catch (error) {
+            console.error("Failed to start recording:", error);
+            alert(`Failed to start recording: ${error instanceof Error ? error.message : String(error)}`);
+            setIsRecording(false);
+        }
     };
 
     const stopRecording = () => {
@@ -50,14 +70,22 @@ export function RecordingProvider({ children }: { children: React.ReactNode }) {
             return;
         }
 
-        const data = JSON.stringify(events.current);
-        const blob = new Blob([data], { type: "application/json" });
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement("a");
-        a.href = url;
-        a.download = `${name}-${new Date().toISOString()}.json`;
-        a.click();
-        URL.revokeObjectURL(url);
+        try {
+            const data = JSON.stringify(events.current);
+            const blob = new Blob([data], { type: "application/json" });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement("a");
+            a.href = url;
+            a.download = `${name}-${new Date().toISOString()}.json`;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            URL.revokeObjectURL(url);
+            console.log(`Downloaded recording with ${events.current.length} events`);
+        } catch (error) {
+            console.error("Failed to download recording:", error);
+            alert(`Failed to download recording: ${error instanceof Error ? error.message : String(error)}`);
+        }
     };
 
     // Auto-cleanup on unmount
