@@ -73,12 +73,12 @@ function StickyToBottomContent(props: {
       <div
         ref={context.contentRef}
         className={props.contentClassName}
-        style={{ flex: "1 1 auto", overflowY: "auto", minHeight: 0 }}
+        style={{ flex: "1 1 auto", overflowY: "auto", minHeight: 0, position: "relative", zIndex: 1 }}
       >
         {props.content}
       </div>
 
-      <div style={{ flexShrink: 0 }}>
+      <div className="bg-background" style={{ flexShrink: 0, position: "relative", zIndex: 20 }}>
         {props.footer}
       </div>
     </div>
@@ -530,7 +530,7 @@ export function Thread({ embedded, className, hideArtifacts }: ThreadProps = {})
                 </TooltipIconButton>
               </div>
 
-              <div className="from-background to-background/0 absolute inset-x-0 top-full h-5 bg-gradient-to-b" />
+              <div className="from-background to-background/0 absolute inset-x-0 top-full h-5 bg-gradient-to-b pointer-events-none" style={{ zIndex: 5 }} />
             </div>
           )}
 
@@ -540,7 +540,7 @@ export function Thread({ embedded, className, hideArtifacts }: ThreadProps = {})
                 "px-4 [&::-webkit-scrollbar]:w-1.5 [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:bg-gray-300 [&::-webkit-scrollbar-track]:bg-transparent",
                 !chatStarted && "mt-[25vh]",
               )}
-              contentClassName="pt-8 pb-16 max-w-3xl mx-auto flex flex-col gap-4 w-full"
+              contentClassName="pt-8 pb-32 max-w-3xl mx-auto flex flex-col gap-4 w-full"
               style={{ maxHeight: '100%', height: '100%', flex: '1 1 auto', minHeight: 0, overflow: 'hidden' }}
               content={
                 <>
@@ -588,7 +588,7 @@ export function Thread({ embedded, className, hideArtifacts }: ThreadProps = {})
                 </>
               }
               footer={
-                <div className="flex flex-col items-center gap-8 bg-background z-10 shrink-0 w-full" style={{ flexShrink: 0, maxWidth: '100%', overflow: 'hidden', boxSizing: 'border-box' }}>
+                <div className="flex flex-col items-center gap-8 bg-background shrink-0 w-full relative pt-4" style={{ flexShrink: 0, maxWidth: '100%', overflow: 'hidden', boxSizing: 'border-box', zIndex: 20, position: 'relative' }}>
                   {!chatStarted && (
                     <div className="flex items-center gap-3">
                       <LangGraphLogoSVG className="h-8 flex-shrink-0 text-primary" />
@@ -603,12 +603,12 @@ export function Thread({ embedded, className, hideArtifacts }: ThreadProps = {})
                   <div
                     ref={dropRef}
                     className={cn(
-                      "bg-muted relative z-10 mx-auto mb-8 w-full max-w-3xl rounded-2xl shadow-xs transition-all",
+                      "bg-muted relative mx-auto mb-8 w-full max-w-3xl rounded-2xl shadow-xs transition-all",
                       dragOver
                         ? "border-primary border-2 border-dotted"
                         : "border border-solid",
                     )}
-                    style={{ maxWidth: 'calc(100% - 2rem)', boxSizing: 'border-box' }}
+                    style={{ maxWidth: 'calc(100% - 2rem)', boxSizing: 'border-box', zIndex: 10, position: 'relative' }}
                   >
                     <form
                       onSubmit={handleSubmit}
