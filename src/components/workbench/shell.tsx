@@ -37,8 +37,11 @@ export function WorkbenchShell({ children }: { children: React.ReactNode }) {
     const [isWorkbenchOpen, setIsWorkbenchOpen] = useState(true);
     const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
     const [isAgentPanelOpen, setIsAgentPanelOpen] = useState(true);
-    const [agentPanelHeight, setAgentPanelHeight] = useState(300); // Default height in pixels
+    const [agentPanelWidthPercent, setAgentPanelWidthPercent] = useState(0.4); // Default 40% width
     const [isResizing, setIsResizing] = useState(false);
+    const minPercent = 0.25; // 25% minimum for both panels
+    const maxPercent = 0.75; // 75% maximum for both panels
+    const isAgentPanelMaximized = agentPanelWidthPercent >= maxPercent;
     const [isArtifactOpen, closeArtifact] = useArtifactOpen();
     const [releaseNotesOpen, setReleaseNotesOpen] = useState(false);
     const [isMounted, setIsMounted] = useState(false);
@@ -104,20 +107,17 @@ export function WorkbenchShell({ children }: { children: React.ReactNode }) {
             if (!container) return;
             
             const containerRect = container.getBoundingClientRect();
-            const containerHeight = containerRect.height;
-            const headerHeight = 56; // h-14 = 56px
-            const availableHeight = containerHeight - headerHeight;
+            const containerWidth = containerRect.width;
             
-            // Calculate new agent panel height from bottom
-            const mouseY = e.clientY;
-            const relativeY = containerRect.bottom - mouseY;
+            // Calculate new agent panel width from right edge
+            const mouseX = e.clientX;
+            const relativeX = containerRect.right - mouseX;
             
-            // Constrain between min and max heights
-            const minHeight = 150; // Minimum 150px for agent panel
-            const maxHeight = availableHeight - 200; // Leave at least 200px for workbench
-            const newHeight = Math.max(minHeight, Math.min(maxHeight, relativeY));
+            // Convert to percentage and constrain between min and max
+            const newPercent = relativeX / containerWidth;
+            const clampedPercent = Math.max(minPercent, Math.min(maxPercent, newPercent));
             
-            setAgentPanelHeight(newHeight);
+            setAgentPanelWidthPercent(clampedPercent);
         };
 
         const handleMouseUp = () => {
@@ -127,7 +127,7 @@ export function WorkbenchShell({ children }: { children: React.ReactNode }) {
         if (isResizing) {
             document.addEventListener('mousemove', handleMouseMove);
             document.addEventListener('mouseup', handleMouseUp);
-            document.body.style.cursor = 'row-resize';
+            document.body.style.cursor = 'col-resize';
             document.body.style.userSelect = 'none';
         }
 
@@ -153,9 +153,9 @@ export function WorkbenchShell({ children }: { children: React.ReactNode }) {
     useLayoutEffect(() => {
         if (isAgentPanelOpen && agentPanelRef.current) {
             // Force layout recalculation
-            void agentPanelRef.current.offsetHeight;
+            void agentPanelRef.current.offsetWidth;
         }
-    }, [isAgentPanelOpen, agentPanelHeight]);
+    }, [isAgentPanelOpen, agentPanelWidthPercent]);
 
     return (
         <div className="flex h-screen bg-background text-foreground overflow-hidden">
@@ -297,13 +297,21 @@ export function WorkbenchShell({ children }: { children: React.ReactNode }) {
                     </div>
                 </header>
 
-                {/* Level 3: Content Stage - Workbench takes main area */}
-                <div className="flex-1 flex flex-col overflow-hidden min-h-0">
+                {/* Level 3: Content Stage - Horizontal layout: Workbench left, Agent Chat right */}
+                <div className="flex-1 flex flex-row overflow-hidden min-h-0">
                     {/* Workbench Main Area */}
-                    <div className="flex-1 flex overflow-hidden min-h-0" style={{ height: isAgentPanelOpen ? `calc(100% - ${agentPanelHeight}px)` : '100%', maxHeight: isAgentPanelOpen ? `calc(100% - ${agentPanelHeight}px)` : '100%' }}>
-                        {isWorkbenchOpen && (
-                            <aside className="flex-1 border-l bg-background flex flex-col shadow-xl z-30">
-                            {/* Workbench Tabs - Now inside the Right Pane */}
+                    {isWorkbenchOpen && (
+                        <aside 
+                            className="bg-background flex flex-col shadow-xl z-30 border-r"
+                            style={{ 
+                                width: isAgentPanelOpen && !isAgentPanelMaximized 
+                                    ? `${(1 - agentPanelWidthPercent) * 100}%` 
+                                    : isAgentPanelMaximized ? '0%' : '100%',
+                                minWidth: isAgentPanelOpen && !isAgentPanelMaximized ? '25%' : '0%',
+                                maxWidth: isAgentPanelOpen && !isAgentPanelMaximized ? '75%' : '100%'
+                            }}
+                        >
+                            {/* Workbench Tabs */}
                             <div className="h-12 border-b flex items-center px-6 bg-muted/10 shrink-0">
                                 <div className="flex items-center space-x-1">
                                     <Button
@@ -382,34 +390,33 @@ export function WorkbenchShell({ children }: { children: React.ReactNode }) {
                                     {children}
                                 </div>
                             )}
-                            </aside>
-                        )}
-                    </div>
+                        </aside>
+                    )}
 
                     {/* Resizable Divider */}
                     {isAgentPanelOpen && (
                         <div
                             className={cn(
-                                "h-1 border-t border-b bg-border cursor-row-resize hover:bg-primary/20 transition-colors relative group",
+                                "w-1 border-l border-r bg-border cursor-col-resize hover:bg-primary/20 transition-colors relative group",
                                 isResizing && "bg-primary/30"
                             )}
                             onMouseDown={handleMouseDown}
-                            style={{ minHeight: '4px' }}
+                            style={{ minWidth: '4px' }}
                         >
-                            <div className="absolute inset-x-0 top-1/2 -translate-y-1/2 h-1 flex items-center justify-center">
-                                <div className="h-0.5 w-16 bg-muted-foreground/30 group-hover:bg-primary/50 rounded-full transition-colors" />
+                            <div className="absolute inset-y-0 left-1/2 -translate-x-1/2 w-1 flex items-center justify-center">
+                                <div className="w-0.5 h-16 bg-muted-foreground/30 group-hover:bg-primary/50 rounded-full transition-colors" />
                             </div>
                         </div>
                     )}
 
-                    {/* Agent Chat Panel - Bottom */}
+                    {/* Agent Chat Panel - Right */}
                     <div 
                         ref={agentPanelRef}
-                        className="relative shrink-0 overflow-hidden" 
+                        className="relative shrink-0 overflow-hidden bg-background border-l" 
                         style={{ 
-                            height: isAgentPanelOpen ? `${agentPanelHeight}px` : '0px', 
-                            maxHeight: isAgentPanelOpen ? `${agentPanelHeight}px` : '0px',
-                            minHeight: isAgentPanelOpen ? `${agentPanelHeight}px` : '0px'
+                            width: isAgentPanelOpen ? `${agentPanelWidthPercent * 100}%` : '0px',
+                            minWidth: isAgentPanelOpen ? '25%' : '0px',
+                            maxWidth: isAgentPanelOpen ? '75%' : '0px'
                         }}
                     >
                         {isAgentPanelOpen && isMounted ? (
@@ -470,7 +477,7 @@ export function WorkbenchShell({ children }: { children: React.ReactNode }) {
                             <Button
                                 variant="ghost"
                                 size="sm"
-                                className="absolute bottom-4 left-1/2 -translate-x-1/2 h-8 px-3 bg-background border shadow-md hover:bg-muted z-50"
+                                className="absolute top-4 right-4 h-8 px-3 bg-background border shadow-md hover:bg-muted z-50"
                                 onClick={() => setIsAgentPanelOpen(true)}
                             >
                                 <MessageSquare className="h-3.5 w-3.5 mr-2" />
