@@ -68,6 +68,8 @@ export function ApprovalCard({ item, stream }: ApprovalCardProps) {
             const values: Record<string, unknown> = {};
             if ((data as any).active_agent) values.active_agent = (data as any).active_agent;
             if ((data as any).current_trigger_id != null) values.current_trigger_id = (data as any).current_trigger_id;
+            if ((data as any).visualization_html) values.visualization_html = (data as any).visualization_html;
+            if ((data as any).project_name) values.project_name = (data as any).project_name;
             if (Object.keys(values).length) await (stream as any).updateState({ values });
           }
           // Land on map with Artifacts tab so user sees project content; /workbench/hydration only shows proposal diff (often empty)
@@ -124,6 +126,8 @@ export function ApprovalCard({ item, stream }: ApprovalCardProps) {
             const values: Record<string, unknown> = {};
             if ((data as any).active_agent) values.active_agent = (data as any).active_agent;
             if ((data as any).current_trigger_id != null) values.current_trigger_id = (data as any).current_trigger_id;
+            if ((data as any).visualization_html) values.visualization_html = (data as any).visualization_html;
+            if ((data as any).project_name) values.project_name = (data as any).project_name;
             if (Object.keys(values).length) await (stream as any).updateState({ values });
           }
           // Navigate to map view to see the transition
