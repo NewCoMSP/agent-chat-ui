@@ -37,6 +37,16 @@ interface GraphData {
     };
 }
 
+/** Workflow diagram from GET /api/workflow (#50 Phase 4). */
+interface WorkflowDiagram {
+    workflow_id: string;
+    name?: string;
+    version?: string;
+    nodes: { id: string; label: string }[];
+    links: { source: string; target: string }[];
+    active_node?: string;
+}
+
 const typeConfig: Record<string, { color: string; label: string }> = {
     DOMAIN: { color: '#64748b', label: 'Domain' },
     REQ: { color: '#fbbf24', label: 'Trigger' },
@@ -72,6 +82,40 @@ export function WorldMapView() {
     const [compareVersion2, setCompareVersion2] = useState<string | null>(null);
     const [diffData, setDiffData] = useState<any>(null);
     const [loadingDiff, setLoadingDiff] = useState(false);
+
+    /** Workflow diagram from API (#50 Phase 4); single source of truth for Workflow tab. */
+    const [workflowDiagram, setWorkflowDiagram] = useState<WorkflowDiagram | null>(null);
+    const [loadingWorkflow, setLoadingWorkflow] = useState(false);
+    const activeMode = (stream as any)?.values?.active_mode as string | undefined;
+
+    // Fetch workflow diagram when on Workflow tab or when active_mode is set
+    const fetchWorkflowDiagram = async () => {
+        setLoadingWorkflow(true);
+        try {
+            const params = new URLSearchParams();
+            if (activeMode) params.set('active_node', activeMode);
+            const orgContext = localStorage.getItem('reflexion_org_context');
+            const headers: Record<string, string> = {};
+            if (orgContext) headers['X-Organization-Context'] = orgContext;
+            const url = `/api/workflow${params.toString() ? `?${params.toString()}` : ''}`;
+            const res = await fetch(url, { headers });
+            if (res.ok) {
+                const diagram = await res.json();
+                setWorkflowDiagram(diagram);
+            } else {
+                setWorkflowDiagram(null);
+            }
+        } catch (e) {
+            console.error('[WorldMapView] Workflow diagram fetch error:', e);
+            setWorkflowDiagram(null);
+        } finally {
+            setLoadingWorkflow(false);
+        }
+    };
+
+    useEffect(() => {
+        if (viewMode === 'workflow') fetchWorkflowDiagram();
+    }, [viewMode, activeMode]);
 
     // Auto-toggle to workflow when a new visualization arrives
     useEffect(() => {
@@ -961,12 +1005,38 @@ export function WorldMapView() {
                     }}>
                         {viewMode === 'workflow' ? (
                     <div className="absolute inset-0 flex flex-col bg-background">
-                        {!visualizationHtml ? (
+                        {loadingWorkflow ? (
+                            <div className="flex-1 flex items-center justify-center">
+                                <div className="h-6 w-6 border-2 border-primary border-t-transparent rounded-full animate-spin" />
+                            </div>
+                        ) : workflowDiagram?.nodes?.length ? (
+                            <div className="flex-1 flex items-center justify-center p-6 overflow-auto">
+                                <div className="flex flex-wrap items-center justify-center gap-2">
+                                    {workflowDiagram.nodes.map((node, i) => (
+                                        <React.Fragment key={node.id}>
+                                            <div
+                                                className={cn(
+                                                    'px-4 py-2 rounded-lg border text-sm font-medium transition-colors',
+                                                    workflowDiagram.active_node === node.id
+                                                        ? 'bg-primary text-primary-foreground border-primary'
+                                                        : 'bg-muted/50 text-muted-foreground border-border'
+                                                )}
+                                            >
+                                                {node.label}
+                                            </div>
+                                            {i < workflowDiagram.nodes.length - 1 && (
+                                                <span className="text-muted-foreground">→</span>
+                                            )}
+                                        </React.Fragment>
+                                    ))}
+                                </div>
+                            </div>
+                        ) : !visualizationHtml ? (
                             <div className="flex-1 flex flex-col items-center justify-center text-muted-foreground gap-4">
                                 <Activity className="w-12 h-12 opacity-20" />
                                 <div className="text-center">
                                     <h3 className="text-sm font-medium text-foreground">No active orientation</h3>
-                                    <p className="text-xs text-muted-foreground mt-1 max-w-[200px]">Ask the agent to "show orientation" to see the project workflow here.</p>
+                                    <p className="text-xs text-muted-foreground mt-1 max-w-[200px]">Ask the agent to "show orientation" or switch phase to see the workflow here.</p>
                                 </div>
                                 <UIButton
                                     variant="outline"
@@ -1063,12 +1133,38 @@ export function WorldMapView() {
                 <div ref={containerRef} className="flex-1 relative overflow-hidden" onClick={() => setSelectedNode(null)}>
                     {viewMode === 'workflow' ? (
                         <div className="absolute inset-0 flex flex-col bg-background">
-                            {!visualizationHtml ? (
+                            {loadingWorkflow ? (
+                                <div className="flex-1 flex items-center justify-center">
+                                    <div className="h-6 w-6 border-2 border-primary border-t-transparent rounded-full animate-spin" />
+                                </div>
+                            ) : workflowDiagram?.nodes?.length ? (
+                                <div className="flex-1 flex items-center justify-center p-6 overflow-auto">
+                                    <div className="flex flex-wrap items-center justify-center gap-2">
+                                        {workflowDiagram.nodes.map((node, i) => (
+                                            <React.Fragment key={node.id}>
+                                                <div
+                                                    className={cn(
+                                                        'px-4 py-2 rounded-lg border text-sm font-medium transition-colors',
+                                                        workflowDiagram.active_node === node.id
+                                                            ? 'bg-primary text-primary-foreground border-primary'
+                                                            : 'bg-muted/50 text-muted-foreground border-border'
+                                                    )}
+                                                >
+                                                    {node.label}
+                                                </div>
+                                                {i < workflowDiagram.nodes.length - 1 && (
+                                                    <span className="text-muted-foreground">→</span>
+                                                )}
+                                            </React.Fragment>
+                                        ))}
+                                    </div>
+                                </div>
+                            ) : !visualizationHtml ? (
                                 <div className="flex-1 flex flex-col items-center justify-center text-muted-foreground gap-4">
                                     <Activity className="w-12 h-12 opacity-20" />
                                     <div className="text-center">
                                         <h3 className="text-sm font-medium text-foreground">No active orientation</h3>
-                                        <p className="text-xs text-muted-foreground mt-1 max-w-[200px]">Ask the agent to "show orientation" to see the project workflow here.</p>
+                                        <p className="text-xs text-muted-foreground mt-1 max-w-[200px]">Ask the agent to "show orientation" or switch phase to see the workflow here.</p>
                                     </div>
                                     <UIButton
                                         variant="outline"

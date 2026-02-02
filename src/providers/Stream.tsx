@@ -321,14 +321,22 @@ const StreamSession = ({
   // After Apply, backend triggers a graph run; refetch thread state so we see new messages and active_mode.
   // Never overwrite with an older snapshot: if refetched has fewer messages than the stream, keep current messages
   // to avoid "bunch of messages inserted before mine" when user just sent a message and refetch returns stale state.
-  const refetchThreadState = useCallback(async () => {
+  // Handles 409 (conflict during concurrent state update) and connection resets with a single retry.
+  const refetchThreadState = useCallback(async (attempt = 0) => {
     if (!threadId || !apiUrl) return;
+    const maxRetries = 1;
+    const retryDelayMs = 2000;
+    const headers: Record<string, string> = { "Content-Type": "application/json" };
+    if (apiKey) headers["X-Api-Key"] = apiKey;
+    if (orgContext) headers["X-Organization-Context"] = orgContext;
+    const base = apiUrl.replace(/\/+$/, "");
+    const url = `${base}/threads/${threadId}/state`;
     try {
-      const headers: Record<string, string> = { "Content-Type": "application/json" };
-      if (apiKey) headers["X-Api-Key"] = apiKey;
-      if (orgContext) headers["X-Organization-Context"] = orgContext;
-      const base = apiUrl.replace(/\/+$/, "");
-      const res = await fetch(`${base}/threads/${threadId}/state`, { headers });
+      const res = await fetch(url, { headers });
+      if (res.status === 409 && attempt < maxRetries) {
+        await new Promise((r) => setTimeout(r, retryDelayMs));
+        return refetchThreadState(attempt + 1);
+      }
       if (!res.ok) return;
       const data = (await res.json()) as { values?: Record<string, unknown> };
       const values = data?.values;
@@ -343,7 +351,17 @@ const StreamSession = ({
         setValuesOverlay({ ...valuesOverlayRef.current });
       }
     } catch (e) {
-      console.warn("[Stream] refetchThreadState failed:", e);
+      const isNetworkError =
+        e instanceof TypeError && e.message === "Failed to fetch" ||
+        (e as Error)?.message?.includes("Connection") ||
+        (e as Error)?.message?.includes("reset");
+      if (isNetworkError && attempt < maxRetries) {
+        await new Promise((r) => setTimeout(r, retryDelayMs));
+        return refetchThreadState(attempt + 1);
+      }
+      if (attempt > 0 || !isNetworkError) {
+        console.warn("[Stream] refetchThreadState failed:", e);
+      }
     }
   }, [threadId, apiUrl, apiKey, orgContext]);
 

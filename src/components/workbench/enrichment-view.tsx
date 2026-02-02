@@ -37,6 +37,10 @@ export interface EnrichmentProposal {
   filename?: string;
   preview_data?: {
     diff?: any; // SemanticDiff structure from backend
+    /** Traceability: KG coverage validation during enrichment (from backend) */
+    coverage_valid?: boolean;
+    coverage_results?: Array<{ entity_type_id: string; source_template_id: string; min_instances: number; count: number; satisfied: boolean; description?: string }>;
+    coverage_errors?: string[];
   };
 }
 
@@ -413,6 +417,31 @@ export function EnrichmentView() {
                 {proposal.preview_data?.diff && (
                   <div className="mb-4 p-4 border rounded-lg bg-muted/30">
                     {renderEnrichmentDiff(proposal.preview_data.diff)}
+                  </div>
+                )}
+
+                {/* Traceability / Coverage (during enrichment) */}
+                {proposal.preview_data && "coverage_valid" in proposal.preview_data && (
+                  <div className={cn(
+                    "mb-4 p-3 border rounded-lg text-sm",
+                    proposal.preview_data.coverage_valid === true
+                      ? "border-green-500/50 bg-green-500/10"
+                      : "border-amber-500/50 bg-amber-500/10"
+                  )}>
+                    <span className="font-medium">
+                      {proposal.preview_data.coverage_valid === true ? (
+                        <><CheckCircle2 className="inline h-4 w-4 mr-1.5 text-green-600" /> Coverage OK</>
+                      ) : (
+                        <><AlertCircle className="inline h-4 w-4 mr-1.5 text-amber-600" /> Coverage gaps</>
+                      )}
+                    </span>
+                    {proposal.preview_data.coverage_errors?.length ? (
+                      <ul className="mt-2 list-disc list-inside text-muted-foreground">
+                        {proposal.preview_data.coverage_errors.slice(0, 5).map((err: string, i: number) => (
+                          <li key={i}>{err}</li>
+                        ))}
+                      </ul>
+                    ) : null}
                   </div>
                 )}
 
