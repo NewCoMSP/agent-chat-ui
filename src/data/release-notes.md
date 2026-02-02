@@ -15,7 +15,7 @@ New admin-only Agent Administrator in System Settings lets NewCo administrators 
 ### New Features
 
 #### Agent Administrator (System Settings)
-New section in System Settings (same pattern as Organization Management) for viewing and managing Reflexion workflow agents. Admin-only: requires NewCo Administrator (or equivalent) role. Lists all five agents (Supervisor, Hydration, Concept, Architecture, Administration) with expandable prompt details.
+New section in System Settings (same pattern as Organization Management) for viewing and managing NewCo workflow agents. Admin-only: requires NewCo Administrator (or equivalent) role. Lists all five agents (Supervisor, Hydration, Concept, Architecture, Administration) with expandable prompt details.
 
 #### Backend Agents Registry & API
 Canonical agents registry in the backend (`agents_registry`) exposes per-agent: id, name, description, primary role, tools, workflow, critical instructions, and temperature. **GET /auth/agents** (admin-only) returns the full list. **PUT /auth/agents/:id** (admin-only) updates overrides; changes are persisted to `data/agent_config.json` and merged with defaults on read.
