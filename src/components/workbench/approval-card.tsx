@@ -69,7 +69,8 @@ async function persistDecision(
   item: UnifiedPreviewItem,
   status: "approved" | "rejected",
   threadId: string | undefined,
-  extra: { option_index?: number; artifact_id?: string; kg_version_sha?: string } = {}
+  extra: { option_index?: number; artifact_id?: string; kg_version_sha?: string } = {},
+  stream?: { values?: { workflow_run_id?: string } }
 ): Promise<void> {
   try {
     const projectId = await resolveThreadIdToProjectId(threadId) ?? threadId ?? "default";
@@ -83,6 +84,7 @@ async function persistDecision(
             kg_version: (args as any).kg_version,
           }
         : undefined;
+    const workflow_run_id = (stream as any)?.values?.workflow_run_id ?? undefined;
     const headers: Record<string, string> = { "Content-Type": "application/json" };
     const orgContext = typeof localStorage !== "undefined" ? localStorage.getItem("reflexion_org_context") : null;
     if (orgContext) headers["X-Organization-Context"] = orgContext;
@@ -102,6 +104,7 @@ async function persistDecision(
           artifact_id: extra.artifact_id,
           args: { cache_key: args.cache_key, trigger_id: args.trigger_id },
           ...(extra.kg_version_sha != null ? { kg_version_sha: extra.kg_version_sha } : {}),
+          ...(workflow_run_id != null && workflow_run_id !== "" ? { workflow_run_id } : {}),
         },
       }),
     });
@@ -141,7 +144,7 @@ export function ApprovalCard({ item, stream, onDecisionProcessed, onViewFullProp
       if (decisionType === "reject") {
         setStatus("rejected");
         onDecisionProcessed?.(item, "rejected");
-        await persistDecision(item, "rejected", item.threadId ?? (stream as any)?.threadId ?? threadIdFromUrl ?? undefined);
+        await persistDecision(item, "rejected", item.threadId ?? (stream as any)?.threadId ?? threadIdFromUrl ?? undefined, {}, stream);
         toast.info("Classification not applied");
         setIsLoading(false);
         return;
@@ -173,7 +176,7 @@ export function ApprovalCard({ item, stream, onDecisionProcessed, onViewFullProp
           // Link decision to KG version so Decisions panel can show KG diff and Map can navigate by decision
           const kg_version_sha = await fetchLatestKgVersionSha(threadId);
           onDecisionProcessed?.(item, "approved", { kg_version_sha });
-          await persistDecision(item, "approved", threadId, { kg_version_sha });
+          await persistDecision(item, "approved", threadId, { kg_version_sha }, stream);
           toast.success("Approved", {
             description: "Classification applied.",
           });
@@ -213,7 +216,7 @@ export function ApprovalCard({ item, stream, onDecisionProcessed, onViewFullProp
       if (decisionType === "reject") {
         setStatus("rejected");
         onDecisionProcessed?.(item, "rejected");
-        await persistDecision(item, "rejected", item.threadId ?? (stream as any)?.threadId ?? threadIdFromUrl ?? undefined);
+        await persistDecision(item, "rejected", item.threadId ?? (stream as any)?.threadId ?? threadIdFromUrl ?? undefined, {}, stream);
         toast.info("Hydration completion not applied");
         setIsLoading(false);
         return;
@@ -242,7 +245,7 @@ export function ApprovalCard({ item, stream, onDecisionProcessed, onViewFullProp
           const data = await res.json();
           setStatus("approved");
           onDecisionProcessed?.(item, "approved");
-          await persistDecision(item, "approved", threadId);
+          await persistDecision(item, "approved", threadId, {}, stream);
           toast.success("Hydration Complete", {
             description: "Transitioning to Concept phase. The Concept agent will now help generate Concept Briefs.",
           });
@@ -282,7 +285,7 @@ export function ApprovalCard({ item, stream, onDecisionProcessed, onViewFullProp
       if (decisionType === "reject") {
         setStatus("rejected");
         onDecisionProcessed?.(item, "rejected");
-        await persistDecision(item, "rejected", item.threadId ?? (stream as any)?.threadId ?? threadIdFromUrl ?? undefined);
+        await persistDecision(item, "rejected", item.threadId ?? (stream as any)?.threadId ?? threadIdFromUrl ?? undefined, {}, stream);
         toast.info("Artifact link not applied");
         setIsLoading(false);
         return;
@@ -312,7 +315,7 @@ export function ApprovalCard({ item, stream, onDecisionProcessed, onViewFullProp
           setStatus("approved");
           const kg_version_sha = (data as any).kg_version_sha;
           onDecisionProcessed?.(item, "approved", kg_version_sha != null ? { kg_version_sha } : undefined);
-          await persistDecision(item, "approved", threadId, { ...(kg_version_sha != null ? { kg_version_sha } : {}) });
+          await persistDecision(item, "approved", threadId, { ...(kg_version_sha != null ? { kg_version_sha } : {}) }, stream);
           toast.success("Artifact Linked", {
             description: `Successfully linked ${data.filename || "artifact"} to ${data.artifact_type || "KG"}`,
           });
@@ -357,7 +360,7 @@ export function ApprovalCard({ item, stream, onDecisionProcessed, onViewFullProp
           }
           setStatus("rejected");
           onDecisionProcessed?.(item, "rejected");
-          await persistDecision(item, "rejected", threadId);
+          await persistDecision(item, "rejected", threadId, {}, stream);
           toast.info("Enrichment rejected");
         } catch (error: any) {
           console.error("[ApprovalCard] Error rejecting enrichment:", error);
@@ -394,7 +397,7 @@ export function ApprovalCard({ item, stream, onDecisionProcessed, onViewFullProp
           setStatus("approved");
           const kg_version_sha = (data as any).kg_version_sha;
           onDecisionProcessed?.(item, "approved", kg_version_sha != null ? { kg_version_sha } : undefined);
-          await persistDecision(item, "approved", threadId, { ...(kg_version_sha != null ? { kg_version_sha } : {}) });
+          await persistDecision(item, "approved", threadId, { ...(kg_version_sha != null ? { kg_version_sha } : {}) }, stream);
           toast.success("Enrichment applied", {
             description: "Metadata and artifact types have been saved.",
           });
@@ -431,7 +434,9 @@ export function ApprovalCard({ item, stream, onDecisionProcessed, onViewFullProp
         await persistDecision(
           item,
           "rejected",
-          item.threadId ?? (stream as any)?.threadId ?? threadIdFromUrl ?? undefined
+          item.threadId ?? (stream as any)?.threadId ?? threadIdFromUrl ?? undefined,
+          {},
+          stream
         );
         toast.info("Proposal rejected");
         setIsLoading(false);
@@ -480,7 +485,7 @@ export function ApprovalCard({ item, stream, onDecisionProcessed, onViewFullProp
             option_index: effectiveOptionIndex >= 0 ? effectiveOptionIndex : undefined,
             artifact_id: (data as any).artifact_id,
             ...(kg_version_sha != null ? { kg_version_sha } : {}),
-          });
+          }, stream);
           toast.success("Artifact applied", {
             description: `Saved ${artifactType.replace(/_/g, " ")}.`,
           });

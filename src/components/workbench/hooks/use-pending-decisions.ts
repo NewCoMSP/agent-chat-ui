@@ -6,6 +6,8 @@
 import { useCallback, useEffect, useState } from "react";
 import type { UnifiedPreviewItem } from "./use-unified-previews";
 
+const FETCH_TIMEOUT_MS = 20_000;
+
 interface DecisionRecord {
   id: string;
   type: string;
@@ -51,24 +53,37 @@ export function usePendingDecisions(threadId: string | undefined): {
       return;
     }
     setIsLoading(true);
+    const ac = new AbortController();
+    const timeoutId = setTimeout(() => ac.abort(), FETCH_TIMEOUT_MS);
     try {
       const params = new URLSearchParams({ thread_id: threadId });
       const headers: Record<string, string> = {};
       const orgContext = localStorage.getItem("reflexion_org_context");
       if (orgContext) headers["X-Organization-Context"] = orgContext;
-      const res = await fetch(`/api/decisions?${params}`, { headers });
+      const res = await fetch(`/api/decisions?${params}`, { signal: ac.signal, headers });
+      clearTimeout(timeoutId);
       if (!res.ok) {
         setPending([]);
         return;
       }
       const data = await res.json();
       const list = Array.isArray(data) ? data : [];
+      // Only show current version of each logical decision (exclude superseded old versions)
       const pendingRecords = list.filter(
-        (r: DecisionRecord) => r && typeof r.id === "string" && r.status === "pending"
+        (r: DecisionRecord) =>
+          r &&
+          typeof r.id === "string" &&
+          r.status === "pending" &&
+          !(r as { superseded_by?: string }).superseded_by
       ) as DecisionRecord[];
       setPending(pendingRecords.map((r) => recordToPreviewItem(r, threadId)));
     } catch (e) {
-      console.warn("[usePendingDecisions] Load failed", e);
+      clearTimeout(timeoutId);
+      if ((e as Error)?.name === "AbortError") {
+        console.warn("[usePendingDecisions] Request timed out");
+      } else {
+        console.warn("[usePendingDecisions] Load failed", e);
+      }
       setPending([]);
     } finally {
       setIsLoading(false);
