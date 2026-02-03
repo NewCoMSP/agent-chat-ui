@@ -120,6 +120,8 @@ export function Thread({ embedded, className, hideArtifacts }: ThreadProps = {})
     setApiKey: _setApiKey,
     apiUrl = "http://localhost:8080",
   } = stream;
+  // Use stream's threadId when URL hasn't updated yet so upload sends thread_id and backend can inject proposals.
+  const effectiveThreadIdForUpload = (stream as { threadId?: string | null })?.threadId ?? threadId ?? undefined;
   const {
     contentBlocks,
     setContentBlocks,
@@ -135,7 +137,7 @@ export function Thread({ embedded, className, hideArtifacts }: ThreadProps = {})
     resetBlocks: _resetBlocks,
     dragOver,
     handlePaste,
-  } = useFileUpload({ apiUrl, threadId });
+  } = useFileUpload({ apiUrl, threadId: effectiveThreadIdForUpload });
   const [firstTokenReceived, setFirstTokenReceived] = useState(false);
   const [processedArtifactIds, setProcessedArtifactIds] = useState<Set<string>>(new Set());
   
@@ -157,6 +159,7 @@ export function Thread({ embedded, className, hideArtifacts }: ThreadProps = {})
       .filter((id): id is string => !!id && !processedArtifactIds.has(id));
 
     if (newArtifactIds.length > 0) {
+      console.log("[Thread] ENTER effect: post-upload submit", { newArtifactIdsCount: newArtifactIds.length, effectiveThreadId: effectiveThreadIdForUpload });
       // Mark as processed
       setProcessedArtifactIds((prev) => {
         const updated = new Set(prev);
@@ -194,6 +197,7 @@ export function Thread({ embedded, className, hideArtifacts }: ThreadProps = {})
           streamResumable: true,
         }
       );
+      console.log("[Thread] EXIT effect: post-upload submit SUCCESS", { pending_document_ids: context.pending_document_ids });
 
       // Refetch thread state so stream messages include backend-injected proposals (enrichment, link)
       const refetch = (stream as any).refetchThreadState;

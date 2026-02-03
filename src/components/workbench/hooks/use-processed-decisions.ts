@@ -101,7 +101,12 @@ async function loadFromApi(projectId: string | undefined): Promise<ProcessedDeci
     if (!res.ok) return null;
     const data = await res.json();
     const list = Array.isArray(data) ? data : [];
-    return list.filter((r): r is DecisionRecord => r && typeof r.id === "string").map(mapRecordToProcessed);
+    // Only include approved/rejected; pending decisions belong in the pending list, not processed (they were wrongly shown as "rejected" before)
+    const processedOnly = list.filter(
+      (r): r is DecisionRecord =>
+        r && typeof r.id === "string" && (r.status === "approved" || r.status === "rejected")
+    );
+    return processedOnly.map(mapRecordToProcessed);
   } catch (e) {
     console.warn("[useProcessedDecisions] Load from API failed", e);
     return null;

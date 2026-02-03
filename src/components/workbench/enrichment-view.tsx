@@ -122,6 +122,7 @@ export function EnrichmentView() {
     if (pendingArtifactIds.length === 0) return;
 
     const fetchProposals = async () => {
+      console.log("[EnrichmentView] ENTER fetchProposals", { pendingArtifactIds, threadId });
       setFetching(true);
       const newProposals = new Map<string, EnrichmentProposal>();
       const newSelectedTypes = new Map<string, string[]>();
@@ -196,8 +197,9 @@ export function EnrichmentView() {
 
         setProposals(newProposals);
         setSelectedTypes(newSelectedTypes);
+        console.log("[EnrichmentView] EXIT fetchProposals: SUCCESS", { proposalsCount: newProposals.size });
       } catch (error) {
-        console.error("[Enrichment] Failed to fetch proposals:", error);
+        console.error("[EnrichmentView] EXIT fetchProposals: ERROR", error);
         toast.error("Failed to load enrichment proposals");
       } finally {
         setFetching(false);

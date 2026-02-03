@@ -3,6 +3,7 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { useQueryState } from "nuqs";
 import { useUnifiedPreviews, UnifiedPreviewItem } from "./hooks/use-unified-previews";
+import { usePendingDecisions } from "./hooks/use-pending-decisions";
 import { useProcessedDecisions, ProcessedDecision } from "./hooks/use-processed-decisions";
 import { ApprovalCard } from "./approval-card";
 import { KgDiffDiagramView } from "./kg-diff-diagram-view";
@@ -61,13 +62,25 @@ export function DecisionsPanel() {
   const threadId = (stream as any)?.threadId ?? threadIdFromUrl ?? undefined;
 
   const allPreviews = useUnifiedPreviews();
+  const { pending: pendingFromApi, isLoading: pendingApiLoading, refetch: refetchPending } = usePendingDecisions(threadId);
   const { processed, addProcessed, isLoading } = useProcessedDecisions(threadId);
 
+  // When thread/upload triggers a workbench refresh, refetch persisted pending so we see new decisions from GET /decisions
+  const workbenchRefreshKey = (stream as any)?.workbenchRefreshKey ?? 0;
+  useEffect(() => {
+    if (threadId && workbenchRefreshKey > 0) refetchPending();
+  }, [threadId, workbenchRefreshKey, refetchPending]);
+
   const processedIds = useMemo(() => new Set(processed.map((p) => p.id)), [processed]);
-  const pending = useMemo(
-    () => allPreviews.filter((p) => !processedIds.has(p.id)),
-    [allPreviews, processedIds]
-  );
+  // Merge persisted pending (GET /decisions) with stream-based pending; dedupe by id so we don't rely on refetch timing
+  const pending = useMemo(() => {
+    const byId = new Map<string, UnifiedPreviewItem>();
+    pendingFromApi.forEach((p) => byId.set(p.id, p));
+    allPreviews.forEach((p) => {
+      if (!byId.has(p.id)) byId.set(p.id, p);
+    });
+    return Array.from(byId.values()).filter((p) => !processedIds.has(p.id));
+  }, [pendingFromApi, allPreviews, processedIds]);
 
   const [viewMode, setViewModeState] = useState<ViewMode>("cards");
   const setViewMode = useCallback((mode: ViewMode) => {
@@ -97,8 +110,9 @@ export function DecisionsPanel() {
         timestamp: Date.now(),
         ...(extra?.kg_version_sha != null ? { kg_version_sha: extra.kg_version_sha } : {}),
       });
+      refetchPending();
     },
-    [addProcessed]
+    [addProcessed, refetchPending]
   );
 
   const allRows = useMemo(() => {
@@ -127,7 +141,7 @@ export function DecisionsPanel() {
   );
 
   const _hasAny = pending.length > 0 || processed.length > 0;
-  const emptyMessage = !isLoading && pending.length === 0 && processed.length === 0;
+  const emptyMessage = !isLoading && !pendingApiLoading && pending.length === 0 && processed.length === 0;
 
   return (
     <div className="flex flex-col h-full min-h-0 p-6">
@@ -174,7 +188,7 @@ export function DecisionsPanel() {
         </div>
       </div>
 
-      {isLoading ? (
+      {isLoading || pendingApiLoading ? (
         <div className="flex flex-1 items-center justify-center min-h-[200px]">
           <div className="text-center max-w-md text-muted-foreground text-sm">
             Loading decisions…
