@@ -1,3 +1,4 @@
+/* eslint-disable react-refresh/only-export-components -- file exports provider + useStreamContext */
 "use client";
 
 import React, {
@@ -460,6 +461,7 @@ const StreamSession = ({
         return value;
       }
     });
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- setters/updateState stable, omitting avoids re-create
   }, [rawStream, apiKey, apiUrl, threadId, orgContext, valuesOverlay, workbenchRefreshKey, triggerWorkbenchRefresh, refetchThreadState]);
 
   useEffect(() => {

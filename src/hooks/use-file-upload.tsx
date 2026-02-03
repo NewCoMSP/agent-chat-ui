@@ -601,6 +601,7 @@ export function useFileUpload({
       window.removeEventListener("dragover", handleWindowDragOver);
       dragCounter.current = 0;
     };
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- isDuplicate/uploadDocument intentionally omitted to avoid re-binding
   }, [contentBlocks]);
 
   const removeBlock = (idx: number) => {

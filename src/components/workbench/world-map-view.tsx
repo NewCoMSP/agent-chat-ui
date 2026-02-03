@@ -2,14 +2,16 @@
 
 import React, { useEffect, useRef, useState } from 'react';
 import * as d3 from 'd3';
-import { Search, RefreshCw, ZoomIn, ZoomOut, Maximize, Globe, GitGraph, FileText, GitCompare } from 'lucide-react';
+import { Search, RefreshCw, ZoomIn, ZoomOut, Maximize, Globe, GitCompare } from 'lucide-react';
 import { Button as UIButton } from '@/components/ui/button';
 import { useStreamContext } from '@/providers/Stream';
 import { useQueryState } from 'nuqs';
+import { useMemo } from 'react';
 import { cn } from '@/lib/utils';
 import { KG_DIFF_COLORS } from '@/lib/diff-types';
 import { NodeDetailPanel } from './node-detail-panel';
 import { ArtifactsListView } from './artifacts-list-view';
+import { useUnifiedPreviews } from './hooks/use-unified-previews';
 import { KgDiffDiagramView } from './kg-diff-diagram-view';
 
 interface Node extends d3.SimulationNodeDatum {
@@ -65,8 +67,8 @@ export function WorldMapView() {
     const [threadId] = useQueryState("threadId");
 
     const [kgHistory, setKgHistory] = useState<{ versions: any[], total: number } | null>(null);
-    const [kgDecisions, setKgDecisions] = useState<{ id: string; type: string; title: string; kg_version_sha?: string }[]>([]);
-    const [historyOpen, setHistoryOpen] = useState(false);
+    const [kgDecisions, setKgDecisions] = useState<{ id: string; type: string; title: string; status?: string; kg_version_sha?: string }[]>([]);
+    const [_historyOpen, _setHistoryOpen] = useState(false);
 
     const [showHistory, setShowHistory] = useState(false);
     const [activeVersion, setActiveVersion] = useState<string | null>(null);
@@ -78,6 +80,24 @@ export function WorldMapView() {
     const [loadingDiff, setLoadingDiff] = useState(false);
     /** When in compare mode: 'graph' = force-directed map with diff colors; 'diff' = KgDiffDiagramView (list by change type). Harmonized with KG_DIFF_CONTRACT. */
     const [compareViewMode, setCompareViewMode] = useState<'graph' | 'diff'>('graph');
+
+    const unifiedPreviews = useUnifiedPreviews();
+    const draftArtifactNodes = useMemo(() => {
+        const artifactTypes = new Set([
+            'generate_concept_brief',
+            'generate_requirements_proposal',
+            'generate_architecture_proposal',
+            'generate_design_proposal',
+        ]);
+        return unifiedPreviews
+            .filter((p) => p.status === 'pending' && artifactTypes.has(p.type))
+            .map((p) => ({
+                id: `draft-${p.id}`,
+                name: p.title,
+                type: 'ARTIFACT',
+                metadata: { draft: true, artifact_types: [p.type.replace('generate_', '').replace('_proposal', '').replace('_brief', '')], artifact_id: undefined },
+            })) as Node[];
+    }, [unifiedPreviews]);
 
     // Note: Workflow workbench view removed; version/orientation is in global header. Artifact history and content fetching is handled by NodeDetailPanel.
 
@@ -221,21 +241,32 @@ export function WorldMapView() {
             return;
         }
         fetchData();
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- fetchData/fetchKgHistory intentionally omitted to avoid re-run loops
     }, [threadId, workbenchRefreshKey, activeVersion, filteredKg, compareMode, diffData]);
 
     // After "Begin Enriching" we update thread state with current_trigger_id; refetch version list so the new commit shows.
     const currentTriggerId = (stream as any)?.values?.current_trigger_id;
     useEffect(() => {
         if (threadId && currentTriggerId) fetchKgHistory();
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- fetchKgHistory stable
     }, [threadId, currentTriggerId]);
 
     // Load decisions when we have history so we can show which decision produced each version
     useEffect(() => {
         if (threadId && kgHistory) fetchKgDecisions();
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- fetchKgDecisions stable
     }, [threadId, kgHistory]);
+
+    // After workbench refresh (e.g. after applying a proposal), refetch decisions so artifact list can hide applied drafts
+    useEffect(() => {
+        if (threadId && workbenchRefreshKey > 0) fetchKgDecisions();
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- fetchKgDecisions stable
+    }, [threadId, workbenchRefreshKey]);
 
     useEffect(() => {
         if (!data || !svgRef.current || !containerRef.current) return;
+
+        const svgElForCleanup = svgRef.current;
 
         // Single prominent log so you can filter console by "WorldMapView" and ignore 404/Stream noise
         const hasDiff = !!(diffData?.diff?.nodes?.length && (diffData?.diff?.links?.length ?? diffData?.diff?.edges?.length));
@@ -551,7 +582,7 @@ export function WorldMapView() {
         if (diffData) {
             const added = nodes.filter((n: Node) => (n as any).diff_status === 'added');
             const summaryFromApi = diffData.summary ?? (diffData.diff as any)?.summary ?? {};
-            const allEndpointIds = allEndpointIdsFromResolved;
+            const _allEndpointIds = allEndpointIdsFromResolved;
             const orphans = orphanNodeIds;
             const linkSample = links.slice(0, 8).map((l: Link) => ({
                 source: typeof l.source === 'string' ? l.source : (l.source as Node)?.id,
@@ -756,13 +787,12 @@ export function WorldMapView() {
         return () => {
             simulationRef.current?.stop();
             simulationRef.current = null;
-            const el = svgRef.current;
-            if (el && el.parentNode) {
+            if (svgElForCleanup && svgElForCleanup.parentNode) {
                 try {
                     // Clear SVG with a single DOM write to avoid removeChild errors when
                     // React and D3 disagree (e.g. on project switch / unmount).
-                    el.innerHTML = '';
-                } catch (_) {
+                    svgElForCleanup.innerHTML = '';
+                } catch {
                     // Ignore if already detached or other DOM errors
                 }
             }
@@ -818,23 +848,31 @@ export function WorldMapView() {
         return () => clearTimeout(timeoutId);
     }, [selectedNode, data]);
 
-    // Artifacts View Component
+    // Approved decision ids: hide draft nodes for proposals that were already applied
+    const approvedDecisionIds = useMemo(
+        () => new Set((kgDecisions || []).filter((d) => d.status === 'approved').map((d) => d.id)),
+        [kgDecisions]
+    );
+    const draftsToShow = useMemo(
+        () => draftArtifactNodes.filter((n: Node) => !approvedDecisionIds.has(n.id.replace(/^draft-/, ''))),
+        [draftArtifactNodes, approvedDecisionIds]
+    );
+
+    // Artifacts View Component: KG artifacts (accepted) + pending proposals (draft) — exclude drafts that were applied
     const ArtifactsView = () => {
-        const artifacts = data?.nodes.filter(n => n.type === 'ARTIFACT') || [];
-        
-        // Enrich artifacts with metadata from KG nodes
-        const enrichedArtifacts = artifacts.map(artifact => {
-            // Find the node in data to get full metadata
+        const kgArtifacts = data?.nodes.filter(n => n.type === 'ARTIFACT') || [];
+        const enrichedKg = kgArtifacts.map(artifact => {
             const fullNode = data?.nodes.find(n => n.id === artifact.id);
             return {
                 ...artifact,
                 metadata: fullNode?.metadata || artifact.metadata || {}
             };
         });
+        const artifacts = [...draftsToShow, ...enrichedKg];
 
         return (
             <ArtifactsListView
-                artifacts={enrichedArtifacts}
+                artifacts={artifacts}
                 threadId={threadId}
                 onNodeSelect={setSelectedNode}
                 selectedNode={selectedNode}

@@ -6,8 +6,9 @@ import { useUnifiedPreviews, UnifiedPreviewItem } from "./hooks/use-unified-prev
 import { useProcessedDecisions, ProcessedDecision } from "./hooks/use-processed-decisions";
 import { ApprovalCard } from "./approval-card";
 import { KgDiffDiagramView } from "./kg-diff-diagram-view";
+import { FullProposalContent } from "./full-proposal-modal";
 import { useStreamContext } from "@/providers/Stream";
-import { AlertCircle, LayoutGrid, Table2, Rows3, PanelRight } from "lucide-react";
+import { AlertCircle, LayoutGrid, Table2, Rows3, PanelRight, ArrowLeft } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 
@@ -80,6 +81,7 @@ export function DecisionsPanel() {
 
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [proposalViewActive, setProposalViewActive] = useState(false);
 
   const onDecisionProcessed = useCallback(
     (
@@ -124,7 +126,7 @@ export function DecisionsPanel() {
     [processed, selectedId]
   );
 
-  const hasAny = pending.length > 0 || processed.length > 0;
+  const _hasAny = pending.length > 0 || processed.length > 0;
   const emptyMessage = !isLoading && pending.length === 0 && processed.length === 0;
 
   return (
@@ -226,7 +228,10 @@ export function DecisionsPanel() {
                           )}
                           onClick={() => {
                             if (viewMode === "hybrid") setExpandedId((id) => (id === row.id ? null : row.id));
-                            if (viewMode === "split") setSelectedId((id) => (id === row.id ? null : row.id));
+                            if (viewMode === "split") {
+                              setSelectedId((id) => (id === row.id ? null : row.id));
+                              setProposalViewActive(false);
+                            }
                             if (viewMode === "table" && row.status === "pending" && "item" in row) {
                               setSelectedId(row.id);
                               setViewMode("split");
@@ -336,17 +341,44 @@ export function DecisionsPanel() {
                   )}
                 </div>
               ) : (
-                <div className="flex-1 min-h-0 overflow-y-auto border rounded-lg bg-card p-4">
-                  {selectedItem ? (
-                    <ApprovalCard
-                      item={selectedItem}
-                      stream={stream}
-                      onDecisionProcessed={onDecisionProcessed}
-                    />
+                <div className="flex-1 min-h-0 flex flex-col overflow-hidden border rounded-lg bg-card">
+                  {proposalViewActive && selectedItem ? (
+                    <>
+                      <div className="shrink-0 flex items-center gap-2 border-b px-4 py-2 bg-muted/30">
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="gap-1.5"
+                          onClick={() => setProposalViewActive(false)}
+                        >
+                          <ArrowLeft className="h-3.5 w-3.5" />
+                          Back to decision
+                        </Button>
+                        <span className="text-sm font-medium truncate">{selectedItem.title}</span>
+                      </div>
+                      <div className="flex-1 min-h-0 p-4 overflow-hidden">
+                        <FullProposalContent
+                          title={selectedItem.title}
+                          proposalType={selectedItem.type}
+                          previewData={selectedItem.data?.preview_data as Record<string, unknown> | undefined}
+                        />
+                      </div>
+                    </>
+                  ) : selectedItem ? (
+                    <div className="flex-1 min-h-0 overflow-y-auto p-4">
+                      <ApprovalCard
+                        item={selectedItem}
+                        stream={stream}
+                        onDecisionProcessed={onDecisionProcessed}
+                        onViewFullProposal={() => setProposalViewActive(true)}
+                      />
+                    </div>
                   ) : selectedProcessed ? (
-                    <ProcessedRow decision={selectedProcessed} threadId={threadId} />
+                    <div className="flex-1 min-h-0 overflow-y-auto p-4">
+                      <ProcessedRow decision={selectedProcessed} threadId={threadId} />
+                    </div>
                   ) : (
-                    <div className="flex h-full items-center justify-center text-sm text-muted-foreground">
+                    <div className="flex flex-1 items-center justify-center text-sm text-muted-foreground">
                       Select a row to see details
                     </div>
                   )}

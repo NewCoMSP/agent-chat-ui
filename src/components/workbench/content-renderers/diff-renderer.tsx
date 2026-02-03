@@ -1,3 +1,4 @@
+/* eslint-disable react-refresh/only-export-components -- file exports component + metadata */
 "use client";
 
 import { ReactNode } from "react";
@@ -145,6 +146,11 @@ export class DiffRenderer implements ContentRenderer {
                   <div className="font-medium mb-1">{meta.rightLabel || "Proposed"}</div>
                   {diff.right && (
                     <div className="space-y-1">
+                      {(diff.right as { base_artifact_types?: string[] }).base_artifact_types?.length > 0 && (
+                        <div className="text-muted-foreground text-xs">
+                          Links to base artifacts: {(diff.right as { base_artifact_types: string[] }).base_artifact_types.join(", ")}
+                        </div>
+                      )}
                       {diff.right.artifact_types?.length > 0 && (
                         <div className="text-green-600 dark:text-green-400">
                           Types: {diff.right.artifact_types.join(", ")}

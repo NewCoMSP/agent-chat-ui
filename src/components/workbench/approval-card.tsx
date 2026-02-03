@@ -6,11 +6,12 @@ import { useQueryState } from "nuqs";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { CheckCircle2, XCircle, Edit, LoaderCircle } from "lucide-react";
+import { CheckCircle2, XCircle, Edit, LoaderCircle, FileText } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { UnifiedPreviewItem } from "./hooks/use-unified-previews";
 import { toast } from "sonner";
 import { contentRendererRegistry } from "./content-renderers";
+import { FullProposalModal } from "./full-proposal-modal";
 import "./content-renderers/diff-renderer";
 
 interface ApprovalCardProps {
@@ -22,6 +23,8 @@ interface ApprovalCardProps {
     status: "approved" | "rejected",
     extra?: { kg_version_sha?: string }
   ) => void;
+  /** When provided, "View full proposal" opens the proposal in the parent's detail pane instead of a modal. */
+  onViewFullProposal?: () => void;
 }
 
 /** Resolve threadId to project id so decisions GET/POST use id, not name. */
@@ -107,11 +110,27 @@ async function persistDecision(
   }
 }
 
-export function ApprovalCard({ item, stream, onDecisionProcessed }: ApprovalCardProps) {
+const ARTIFACT_PROPOSAL_TYPES_WITH_FULL_CONTENT = [
+  "generate_requirements_proposal",
+  "generate_architecture_proposal",
+  "generate_design_proposal",
+] as const;
+
+function hasFullProposalContent(item: UnifiedPreviewItem): boolean {
+  const pd = item.data?.preview_data as Record<string, unknown> | undefined;
+  if (!pd) return false;
+  return (
+    ARTIFACT_PROPOSAL_TYPES_WITH_FULL_CONTENT.includes(item.type as (typeof ARTIFACT_PROPOSAL_TYPES_WITH_FULL_CONTENT)[number]) &&
+    (pd.requirements_data != null || pd.architecture_data != null || pd.design_data != null)
+  );
+}
+
+export function ApprovalCard({ item, stream, onDecisionProcessed, onViewFullProposal }: ApprovalCardProps) {
   const router = useRouter();
   const [threadIdFromUrl] = useQueryState("threadId");
   const [status, setStatus] = useState<"pending" | "processing" | "approved" | "rejected">(item.status);
   const [isLoading, setIsLoading] = useState(false);
+  const [showFullProposal, setShowFullProposal] = useState(false);
 
   const handleDecision = async (decisionType: "approve" | "reject" | "edit") => {
     setIsLoading(true);
@@ -142,6 +161,7 @@ export function ApprovalCard({ item, stream, onDecisionProcessed }: ApprovalCard
               thread_id: threadId,
               reasoning: item.data?.args?.reasoning,
               confidence: item.data?.args?.confidence,
+              decision_id: item.id,
             }),
           });
           if (!res.ok) {
@@ -154,8 +174,8 @@ export function ApprovalCard({ item, stream, onDecisionProcessed }: ApprovalCard
           const kg_version_sha = await fetchLatestKgVersionSha(threadId);
           onDecisionProcessed?.(item, "approved", { kg_version_sha });
           await persistDecision(item, "approved", threadId, { kg_version_sha });
-          toast.success("Begin Enriching", {
-            description: "Classification applied. You can now work with the Enrichment agent.",
+          toast.success("Approved", {
+            description: "Classification applied.",
           });
           if (typeof (stream as any).updateState === "function") {
             const values: Record<string, unknown> = {};
@@ -281,6 +301,7 @@ export function ApprovalCard({ item, stream, onDecisionProcessed }: ApprovalCard
               artifact_type: item.data?.args?.artifact_type ?? item.data?.preview_data?.artifact_type,
               thread_id: threadId,
               trigger_id: item.data?.args?.trigger_id ?? item.data?.preview_data?.trigger_id,
+              decision_id: item.id,
             }),
           });
           if (!res.ok) {
@@ -289,8 +310,9 @@ export function ApprovalCard({ item, stream, onDecisionProcessed }: ApprovalCard
           }
           const data = await res.json();
           setStatus("approved");
-          onDecisionProcessed?.(item, "approved");
-          await persistDecision(item, "approved", threadId);
+          const kg_version_sha = (data as any).kg_version_sha;
+          onDecisionProcessed?.(item, "approved", kg_version_sha != null ? { kg_version_sha } : undefined);
+          await persistDecision(item, "approved", threadId, { ...(kg_version_sha != null ? { kg_version_sha } : {}) });
           toast.success("Artifact Linked", {
             description: `Successfully linked ${data.filename || "artifact"} to ${data.artifact_type || "KG"}`,
           });
@@ -360,6 +382,7 @@ export function ApprovalCard({ item, stream, onDecisionProcessed }: ApprovalCard
               body: JSON.stringify({
                 artifact_types: Array.isArray(artifactTypes) ? artifactTypes : [artifactTypes],
                 thread_id: threadId,
+                decision_id: item.id,
               }),
             }
           );
@@ -367,9 +390,11 @@ export function ApprovalCard({ item, stream, onDecisionProcessed }: ApprovalCard
             const err = await res.json().catch(() => ({ detail: res.statusText }));
             throw new Error((err as any).detail || "Failed to apply enrichment");
           }
+          const data = await res.json();
           setStatus("approved");
-          onDecisionProcessed?.(item, "approved");
-          await persistDecision(item, "approved", threadId);
+          const kg_version_sha = (data as any).kg_version_sha;
+          onDecisionProcessed?.(item, "approved", kg_version_sha != null ? { kg_version_sha } : undefined);
+          await persistDecision(item, "approved", threadId, { ...(kg_version_sha != null ? { kg_version_sha } : {}) });
           toast.success("Enrichment applied", {
             description: "Metadata and artifact types have been saved.",
           });
@@ -439,6 +464,7 @@ export function ApprovalCard({ item, stream, onDecisionProcessed }: ApprovalCard
               option_index: typeof optionIndex === "number" ? optionIndex : -1,
               thread_id: threadId,
               artifact_type: artifactType,
+              decision_id: item.id,
             }),
           });
           if (!res.ok) {
@@ -447,11 +473,13 @@ export function ApprovalCard({ item, stream, onDecisionProcessed }: ApprovalCard
           }
           const data = await res.json();
           setStatus("approved");
-          onDecisionProcessed?.(item, "approved");
+          const kg_version_sha = (data as any).kg_version_sha;
+          onDecisionProcessed?.(item, "approved", kg_version_sha != null ? { kg_version_sha } : undefined);
           const effectiveOptionIndex = typeof optionIndex === "number" ? optionIndex : -1;
           await persistDecision(item, "approved", threadId, {
             option_index: effectiveOptionIndex >= 0 ? effectiveOptionIndex : undefined,
             artifact_id: (data as any).artifact_id,
+            ...(kg_version_sha != null ? { kg_version_sha } : {}),
           });
           toast.success("Artifact applied", {
             description: `Saved ${artifactType.replace(/_/g, " ")}.`,
@@ -540,6 +568,30 @@ export function ApprovalCard({ item, stream, onDecisionProcessed }: ApprovalCard
       </CardHeader>
       
       <CardContent className="space-y-4">
+        {/* View full proposal — for requirements/architecture/design (concept has "View full draft" per option in diff view) */}
+        {hasFullProposalContent(item) && (
+          <div className="flex justify-end">
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              className="gap-1.5"
+              onClick={() => (onViewFullProposal ? onViewFullProposal() : setShowFullProposal(true))}
+            >
+              <FileText className="h-3.5 w-3.5" />
+              View full proposal
+            </Button>
+          </div>
+        )}
+        {!onViewFullProposal && (
+          <FullProposalModal
+            open={showFullProposal}
+            onOpenChange={setShowFullProposal}
+            title={item.title}
+            proposalType={item.type}
+            previewData={item.data?.preview_data as Record<string, unknown> | undefined}
+          />
+        )}
         {/* Diff Preview — Concept Brief / UX Brief: no inner scroll so Decisions panel scroll shows all options */}
         {(item.data.diff || item.data.preview_data?.diff) && (
           <div
@@ -568,7 +620,7 @@ export function ApprovalCard({ item, stream, onDecisionProcessed }: ApprovalCard
               className="flex-1"
             >
               <CheckCircle2 className="h-4 w-4 mr-2" />
-              {item.type === "classify_intent" ? "Begin Enriching" : "Approve"}
+              Approve
             </Button>
             <Button
               onClick={() => handleDecision("reject")}
