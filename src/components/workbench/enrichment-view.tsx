@@ -46,8 +46,8 @@ export interface EnrichmentProposal {
     coverage_errors?: string[];
     /** Issue #63: downstream templates that may need re-validation */
     impact_forecast?: { message?: string; downstream_template_ids?: string[] };
-    /** Issue #63: uncovered CRITs (risks in scope) */
-    coverage_analysis?: { message?: string; uncovered_crits?: string[] };
+    /** Issue #63: uncovered CRITs (risks in scope); uncovered_crits_with_labels has id + label for display */
+    coverage_analysis?: { message?: string; uncovered_crits?: string[]; uncovered_crits_with_labels?: Array<{ id: string; label: string }> };
   };
 }
 
