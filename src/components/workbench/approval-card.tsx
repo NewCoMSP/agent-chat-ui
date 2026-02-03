@@ -461,16 +461,30 @@ export function ApprovalCard({ item, stream, onDecisionProcessed, onViewFullProp
           const headers: Record<string, string> = { "Content-Type": "application/json" };
           const orgContext = typeof localStorage !== "undefined" ? localStorage.getItem("reflexion_org_context") : null;
           if (orgContext) headers["X-Organization-Context"] = orgContext;
+          // Send proposal_data from preview so backend can add Architecture/Requirements/Design entity nodes
+          // when cache is missed (e.g. proxy process, Redis down) — fixes history compare showing 0 entity nodes.
+          const pd = item.data?.preview_data as Record<string, unknown> | undefined;
+          const proposalPayload: Record<string, unknown> = {
+            cache_key: cacheKey,
+            option_index: typeof optionIndex === "number" ? optionIndex : -1,
+            thread_id: threadId,
+            artifact_type: artifactType,
+            decision_id: item.id,
+          };
+          if (pd?.architecture_data != null) {
+            proposalPayload.proposal_data = { architecture_data: pd.architecture_data };
+            if (pd.kg_updates != null) proposalPayload.proposal_kg_updates = pd.kg_updates as Record<string, unknown>;
+          } else if (pd?.requirements_data != null) {
+            proposalPayload.proposal_data = { requirements_data: pd.requirements_data };
+            if (pd.kg_updates != null) proposalPayload.proposal_kg_updates = pd.kg_updates as Record<string, unknown>;
+          } else if (pd?.design_data != null) {
+            proposalPayload.proposal_data = { design_data: pd.design_data };
+            if (pd.kg_updates != null) proposalPayload.proposal_kg_updates = pd.kg_updates as Record<string, unknown>;
+          }
           const res = await fetch("/api/artifact/apply", {
             method: "POST",
             headers,
-            body: JSON.stringify({
-              cache_key: cacheKey,
-              option_index: typeof optionIndex === "number" ? optionIndex : -1,
-              thread_id: threadId,
-              artifact_type: artifactType,
-              decision_id: item.id,
-            }),
+            body: JSON.stringify(proposalPayload),
           });
           if (!res.ok) {
             const err = await res.json().catch(() => ({ detail: res.statusText }));
