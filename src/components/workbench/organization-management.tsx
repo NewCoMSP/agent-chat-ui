@@ -25,8 +25,14 @@ interface Organization {
 
 interface WorkflowOption {
     id: string;
-    name: string;
+    name?: string;
 }
+
+// Fallback when backend (e.g. staging) doesn't yet return digital_primary_npd
+const KNOWN_WORKFLOW_FALLBACKS: WorkflowOption[] = [
+    { id: "default", name: "Default" },
+    { id: "digital_primary_npd", name: "Digital primary NPD" },
+];
 
 interface Role {
     key: string;
@@ -91,10 +97,22 @@ export function OrganizationManagement() {
             const resp = await fetch("/api/auth/workflows");
             if (resp.ok) {
                 const data = await resp.json();
-                setWorkflows(Array.isArray(data) ? data : []);
+                const fromApi = Array.isArray(data) ? data : [];
+                const ids = new Set(fromApi.map((w: WorkflowOption) => w.id));
+                const merged = [...fromApi];
+                for (const w of KNOWN_WORKFLOW_FALLBACKS) {
+                    if (!ids.has(w.id)) {
+                        merged.push(w);
+                        ids.add(w.id);
+                    }
+                }
+                setWorkflows(merged);
+            } else {
+                setWorkflows(KNOWN_WORKFLOW_FALLBACKS);
             }
         } catch (e) {
             console.warn("[ORG_MGMT] Failed to load workflows:", e);
+            setWorkflows(KNOWN_WORKFLOW_FALLBACKS);
         }
     };
 
