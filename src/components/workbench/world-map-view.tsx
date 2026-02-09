@@ -1457,6 +1457,23 @@ export function WorldMapView({ embeddedInDecisions = false }: WorldMapViewProps 
                                 <Globe className="w-3.5 h-3.5 text-muted-foreground" />
                                 <span className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest">Knowledge Graph Mode</span>
                             </div>
+                            {/* When embedded in Decisions tab: show that we're displaying diff for the selected decision */}
+                            {embeddedInDecisions && selectedTimelineVersionId && (
+                                <div className="px-3 py-2 bg-background/90 backdrop-blur-md border border-border rounded-lg shadow-lg text-[10px]">
+                                    <span className="font-bold text-muted-foreground uppercase tracking-wider block mb-1.5">Diff for selected decision</span>
+                                    {loadingTimelineDiff ? (
+                                        <span className="text-muted-foreground">Loading diff…</span>
+                                    ) : timelineVersionDiff?.summary ? (
+                                        <div className="flex flex-wrap gap-x-3 gap-y-0.5">
+                                            <span className="flex items-center gap-1"><span className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: KG_DIFF_COLORS.added }} /> Added {timelineVersionDiff.summary.added ?? 0}</span>
+                                            <span className="flex items-center gap-1"><span className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: KG_DIFF_COLORS.modified }} /> Modified {timelineVersionDiff.summary.modified ?? 0}</span>
+                                            <span className="flex items-center gap-1"><span className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: KG_DIFF_COLORS.removed }} /> Removed {timelineVersionDiff.summary.removed ?? 0}</span>
+                                        </div>
+                                    ) : (
+                                        <span className="text-muted-foreground">No diff summary</span>
+                                    )}
+                                </div>
+                            )}
                             {(diffData?.diff?.type === "kg_diff" || timelineVersionDiff?.diff?.type === "kg_diff") && (
                                 <div className="flex flex-col gap-2">
                                     <div className="flex items-center gap-2 px-2">
