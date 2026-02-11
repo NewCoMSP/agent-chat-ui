@@ -38,13 +38,20 @@ export function OrgSwitcher() {
 
                 // Load from local storage or fallback to current session customerId
                 const savedContext = localStorage.getItem('reflexion_org_context');
+                let effectiveOrgId: string | undefined;
                 if (savedContext && data.some((org: Organization) => org.id === savedContext)) {
-                    setSelectedOrgId(savedContext);
+                    effectiveOrgId = savedContext;
                 } else if (session?.user?.customerId && data.some((org: Organization) => org.id === session.user.customerId)) {
-                    setSelectedOrgId(session.user.customerId);
+                    effectiveOrgId = session.user.customerId;
                 } else if (data.length > 0) {
-                    // Fallback to first organization if saved context doesn't exist
-                    setSelectedOrgId(data[0].id);
+                    effectiveOrgId = data[0].id;
+                }
+                if (effectiveOrgId) {
+                    setSelectedOrgId(effectiveOrgId);
+                    // Ensure localStorage is set so project/thread fetches use correct org context
+                    localStorage.setItem('reflexion_org_context', effectiveOrgId);
+                    // Notify other components (sidebar, project-switcher) to refetch with new org
+                    window.dispatchEvent(new CustomEvent('orgContextChanged'));
                 }
             }
         } catch (e) {

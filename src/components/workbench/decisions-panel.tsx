@@ -42,6 +42,8 @@ function setStoredView(mode: ViewMode) {
 function getTypeLabel(type: string): string {
   const labels: Record<string, string> = {
     classify_intent: "Project Classification",
+    propose_project: "Project Template",
+    project_from_upload: "Project from Document",
     generate_project_configuration_summary: "Project Configuration",
     propose_hydration_complete: "Hydration Complete",
     generate_concept_brief: "Concept Brief",
