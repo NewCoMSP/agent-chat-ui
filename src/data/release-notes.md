@@ -4,6 +4,22 @@ Stay up to date with the latest features and improvements.
 
 ---
 
+## v1.7.1 - Session Debugging & Stuck-Run Recovery (February 2026)
+
+### What you get
+
+- **Session size visibility.** If you hit auth or cookie issues, use **GET /api/auth/session-size** (while signed in) to see idToken and session payload size vs the 4KB cookie limit. Helps debug JWT_SESSION_ERROR or decryption problems.
+- **Session size in logs.** When `AUTH_DEBUG` is enabled, the proxy logs session size about once per minute so you can spot oversized sessions without calling the endpoint.
+- **Stuck run detection.** If the agent run doesn’t finish (e.g. backend or Redis timeout), the chat detects “no progress for 2 minutes,” shows a toast, and highlights **Cancel** with a “Run seems stuck — cancel or refresh” hint so you can stop or refresh instead of waiting indefinitely.
+
+### Details
+
+- New API route: `/api/auth/session-size` returns `idTokenBytes`, `approxPayloadBytes`, `typicalCookieLimitBytes`, and `overTypicalLimit`.
+- Proxy route (catch-all) logs session size when `AUTH_DEBUG=true` or in development, throttled to once per 60 seconds.
+- Thread input area: after 2 minutes of loading with no new messages, a one-time toast and inline hint appear; Cancel button is visually emphasized when stuck.
+
+---
+
 ## v1.7.0 - See What Changed, Decide With Context (KG-diff & Traceability)
 
 **Release Date:** February 2, 2026

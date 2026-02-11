@@ -168,7 +168,12 @@ export function Sidebar() {
     useEffect(() => {
         fetchProjects();
         window.addEventListener('focus', fetchProjects);
-        return () => window.removeEventListener('focus', fetchProjects);
+        const handleOrgContextChanged = () => fetchProjects();
+        window.addEventListener('orgContextChanged', handleOrgContextChanged);
+        return () => {
+            window.removeEventListener('focus', fetchProjects);
+            window.removeEventListener('orgContextChanged', handleOrgContextChanged);
+        };
     }, [fetchProjects]);
 
     const filteredProjects = useMemo(() => {

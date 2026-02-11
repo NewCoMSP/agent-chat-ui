@@ -231,6 +231,80 @@ export function ApprovalCard({ item, stream, onDecisionProcessed, onViewFullProp
       }
     }
 
+    // propose_project / project_from_upload (epic #84): apply via POST /project/apply; same handoff as classify_intent
+    const projectProposalTypes = ["propose_project", "project_from_upload"] as const;
+    if (projectProposalTypes.includes(item.type as (typeof projectProposalTypes)[number])) {
+      if (decisionType === "reject") {
+        setStatus("rejected");
+        onDecisionProcessed?.(item, "rejected");
+        await persistDecision(item, "rejected", item.threadId ?? (stream as any)?.threadId ?? threadIdFromUrl ?? undefined);
+        toast.info("Project proposal not applied");
+        setIsLoading(false);
+        return;
+      }
+      if (decisionType === "approve") {
+        try {
+          const threadId = item.threadId ?? (stream as any)?.threadId ?? threadIdFromUrl ?? undefined;
+          const args = item.data?.args ?? {};
+          const projectId = (args.project_id ?? threadId) as string;
+          const payload = {
+            ...args,
+            thread_id: threadId,
+            project_id: projectId,
+          };
+          const headers: Record<string, string> = { "Content-Type": "application/json" };
+          const orgContext = typeof localStorage !== "undefined" ? localStorage.getItem("reflexion_org_context") : null;
+          if (orgContext) headers["X-Organization-Context"] = orgContext;
+          const res = await fetch("/api/project/apply", {
+            method: "POST",
+            headers,
+            body: JSON.stringify({
+              proposal_type: item.type,
+              decision_id: item.id,
+              payload,
+            }),
+          });
+          if (!res.ok) {
+            const err = await res.json().catch(() => ({ detail: res.statusText }));
+            const d = (err as any).detail;
+            const msg = typeof d === "string" ? d : d != null ? JSON.stringify(d) : res.statusText;
+            throw new Error(msg || "Failed to apply project proposal");
+          }
+          const data = await res.json();
+          setStatus("approved");
+          const kg_version_sha = (data as any).kg_version_sha;
+          onDecisionProcessed?.(item, "approved", { kg_version_sha });
+          await persistDecision(item, "approved", threadId, { ...(kg_version_sha != null ? { kg_version_sha } : {}) });
+          toast.success("Approved", { description: "Project created." });
+          if (typeof (stream as any).updateState === "function") {
+            const values: Record<string, unknown> = {};
+            if ((data as any).active_agent) values.active_agent = (data as any).active_agent;
+            if ((data as any).active_mode) values.active_mode = (data as any).active_mode;
+            if ((data as any).current_trigger_id != null) values.current_trigger_id = (data as any).current_trigger_id;
+            if ((data as any).project_name) values.project_name = (data as any).project_name;
+            if (Array.isArray((data as any).messages) && (data as any).messages.length)
+              values._appendMessages = (data as any).messages;
+            if (Object.keys(values).length) await (stream as any).updateState({ values });
+          }
+          if ((data as any).graph_run_triggered && typeof (stream as any).refetchThreadState === "function") {
+            setTimeout(() => (stream as any).refetchThreadState(), 3500);
+          }
+          (stream as any).triggerWorkbenchRefresh?.();
+          const href = projectId
+            ? `/workbench/map?threadId=${encodeURIComponent(projectId)}&view=artifacts`
+            : "/workbench/map?view=artifacts";
+          router.push(href);
+        } catch (error: any) {
+          console.error("[ApprovalCard] Error applying project proposal:", error);
+          setStatus("pending");
+          toast.error("Error", { description: error.message || "Failed to apply project proposal" });
+        } finally {
+          setIsLoading(false);
+        }
+        return;
+      }
+    }
+
     // generate_project_configuration_summary (ex propose_hydration_complete) is preview-only; apply via API (transition to Concept), not graph resume
     if (item.type === "generate_project_configuration_summary" || item.type === "propose_hydration_complete") {
       if (decisionType === "reject") {
@@ -614,6 +688,82 @@ export function ApprovalCard({ item, stream, onDecisionProcessed, onViewFullProp
       }
     }
 
+    // Admin proposals: propose_organization, organization_from_upload, propose_user_add, propose_user_edit, propose_user_remove
+    const adminTypes = ["propose_organization", "organization_from_upload", "propose_user_add", "propose_user_edit", "propose_user_remove"] as const;
+    if (adminTypes.includes(item.type as (typeof adminTypes)[number])) {
+      if (decisionType === "reject") {
+        setStatus("rejected");
+        onDecisionProcessed?.(item, "rejected");
+        await persistDecision(item, "rejected", item.threadId ?? (stream as any)?.threadId ?? threadIdFromUrl ?? undefined);
+        toast.info("Proposal rejected");
+        setIsLoading(false);
+        return;
+      }
+      if (decisionType === "approve") {
+        const args = item.data?.args ?? {};
+        const proposalType =
+          item.type === "propose_organization"
+            ? "create_organization"
+            : item.type === "organization_from_upload"
+              ? "organization_from_upload"
+              : item.type === "propose_user_add"
+                ? "add_user"
+                : item.type === "propose_user_edit"
+                  ? "update_user_roles"
+                  : "remove_user";
+        const payload: Record<string, unknown> =
+          proposalType === "create_organization" || proposalType === "organization_from_upload"
+            ? {
+                org_id: args.org_id ?? args.id,
+                name: args.name,
+                description: args.description,
+                organization_content: args.organization_content,
+                provisioning_state: args.provisioning_state,
+              }
+            : proposalType === "add_user"
+              ? { org_id: args.org_id, email: args.email, roles: args.roles ?? [] }
+              : proposalType === "update_user_roles"
+                ? { org_id: args.org_id, user_email: args.user_email, roles: args.roles ?? [] }
+                : { org_id: args.org_id, user_email: args.user_email };
+        const threadId = item.threadId ?? (stream as any)?.threadId ?? threadIdFromUrl ?? undefined;
+        try {
+          const headers: Record<string, string> = { "Content-Type": "application/json" };
+          const orgContext = typeof localStorage !== "undefined" ? localStorage.getItem("reflexion_org_context") : null;
+          if (orgContext) headers["X-Organization-Context"] = orgContext;
+          const res = await fetch("/api/admin/apply", {
+            method: "POST",
+            headers,
+            body: JSON.stringify({ proposal_type: proposalType, payload }),
+          });
+          if (!res.ok) {
+            const err = await res.json().catch(() => ({ detail: res.statusText }));
+            throw new Error((err as any).detail || "Failed to apply admin proposal");
+          }
+          setStatus("approved");
+          onDecisionProcessed?.(item, "approved");
+          await persistDecision(item, "approved", threadId);
+          toast.success("Applied", {
+            description:
+              proposalType === "create_organization" || proposalType === "organization_from_upload"
+                ? `Organization ${args.name ?? args.org_id} created.`
+                : proposalType === "add_user"
+                  ? `User added to ${args.org_id}.`
+                  : proposalType === "update_user_roles"
+                    ? `User roles updated in ${args.org_id}.`
+                    : `User removed from ${args.org_id}.`,
+          });
+          (stream as any).triggerWorkbenchRefresh?.();
+        } catch (error: any) {
+          console.error("[ApprovalCard] Error applying admin proposal:", error);
+          setStatus("pending");
+          toast.error("Error", { description: error.message || "Failed to apply admin proposal" });
+        } finally {
+          setIsLoading(false);
+        }
+        return;
+      }
+    }
+
     // Preview-only: no interrupt path. All proposals are applied via API branches above.
     setStatus("pending");
     toast.info("Apply not available", {
@@ -625,6 +775,8 @@ export function ApprovalCard({ item, stream, onDecisionProcessed, onViewFullProp
   const getTypeBadgeColor = (type: string) => {
     switch (type) {
       case "classify_intent":
+      case "propose_project":
+      case "project_from_upload":
         return "bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200";
       case "generate_project_configuration_summary":
       case "propose_hydration_complete":
@@ -640,6 +792,7 @@ export function ApprovalCard({ item, stream, onDecisionProcessed, onViewFullProp
       case "artifact_edit":
         return "bg-violet-100 text-violet-800 dark:bg-violet-900 dark:text-violet-200";
       case "propose_organization":
+      case "organization_from_upload":
       case "propose_user_add":
       case "propose_user_edit":
       case "propose_user_remove":

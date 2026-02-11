@@ -118,6 +118,42 @@ export function WorkbenchShell({ children }: { children: React.ReactNode }) {
         }
     }, [status, router]);
 
+    // Role-based initial load: admin → settings (no org), non-admin → org + latest thread
+    useEffect(() => {
+        if (status !== "authenticated" || !session?.user) return;
+        const INIT_KEY = "reflexion_initial_route_done";
+        if (typeof sessionStorage !== "undefined" && sessionStorage.getItem(INIT_KEY)) return;
+        // Only run on default landing: /workbench or /workbench/map with no threadId
+        const onMap = pathname === "/workbench" || pathname?.startsWith("/workbench/map");
+        if (!onMap || (threadId ?? "").trim() !== "") return;
+
+        const customerId = (session.user as { customerId?: string }).customerId;
+        if (isAdmin) {
+            localStorage.removeItem("reflexion_org_context");
+            sessionStorage.setItem(INIT_KEY, "1");
+            router.replace("/workbench/settings");
+            return;
+        }
+        // Non-admin: set their org and latest thread
+        const orgId = customerId?.trim() || "";
+        if (!orgId) {
+            sessionStorage.setItem(INIT_KEY, "1");
+            return;
+        }
+        localStorage.setItem("reflexion_org_context", orgId);
+        window.dispatchEvent(new CustomEvent("orgContextChanged"));
+        fetch("/api/projects", { headers: { "X-Organization-Context": orgId } })
+            .then((r) => (r.ok ? r.json() : []))
+            .then((projects: Array<{ id: string; name?: string; updated_at?: string }>) => {
+                const latest = projects[0]; // API returns sorted by updated_at desc
+                sessionStorage.setItem(INIT_KEY, "1");
+                if (latest?.id) {
+                    router.replace(`/workbench/map?threadId=${encodeURIComponent(latest.id)}`);
+                }
+            })
+            .catch(() => sessionStorage.setItem(INIT_KEY, "1"));
+    }, [status, session, isAdmin, pathname, threadId, router]);
+
     // Decisions has its own route (/workbench/decisions); we do NOT set view=decisions in URL so we keep one canonical URL
 
     // Agent-Driven View Synchronization (Backend -> UI)
