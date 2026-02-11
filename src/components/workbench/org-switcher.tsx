@@ -11,6 +11,9 @@ import {
     SelectValue,
 } from '@/components/ui/select';
 
+/** Sentinel value for "no org" (Home). Radix Select disallows empty string for SelectItem. */
+const HOME_VALUE = '__home__';
+
 interface Organization {
     id: string;
     name: string;
@@ -36,22 +39,25 @@ export function OrgSwitcher() {
                 const data = await resp.json();
                 setOrganizations(data);
 
-                // Load from local storage or fallback to current session customerId
+                // Load from local storage. Admin "home" = no org (empty). Non-admin defaults to their org.
                 const savedContext = localStorage.getItem('reflexion_org_context');
                 let effectiveOrgId: string | undefined;
-                if (savedContext && data.some((org: Organization) => org.id === savedContext)) {
+                if (savedContext === null || savedContext === '') {
+                    // No org selected (admin home). Only keep empty for admin.
+                    effectiveOrgId = isAdmin ? '' : (session?.user?.customerId && data.some((org: Organization) => org.id === session.user.customerId) ? session.user.customerId : data[0]?.id);
+                } else if (data.some((org: Organization) => org.id === savedContext)) {
                     effectiveOrgId = savedContext;
                 } else if (session?.user?.customerId && data.some((org: Organization) => org.id === session.user.customerId)) {
                     effectiveOrgId = session.user.customerId;
                 } else if (data.length > 0) {
                     effectiveOrgId = data[0].id;
                 }
+                setSelectedOrgId(effectiveOrgId ?? HOME_VALUE);
                 if (effectiveOrgId) {
-                    setSelectedOrgId(effectiveOrgId);
-                    // Ensure localStorage is set so project/thread fetches use correct org context
                     localStorage.setItem('reflexion_org_context', effectiveOrgId);
-                    // Notify other components (sidebar, project-switcher) to refetch with new org
                     window.dispatchEvent(new CustomEvent('orgContextChanged'));
+                } else {
+                    localStorage.removeItem('reflexion_org_context');
                 }
             }
         } catch (e) {
@@ -87,15 +93,20 @@ export function OrgSwitcher() {
 
     const handleValueChange = (orgId: string) => {
         setSelectedOrgId(orgId);
-        localStorage.setItem('reflexion_org_context', orgId);
-        // Reload to apply context across components
+        if (orgId && orgId !== HOME_VALUE) {
+            localStorage.setItem('reflexion_org_context', orgId);
+        } else {
+            localStorage.removeItem('reflexion_org_context');
+        }
+        window.dispatchEvent(new CustomEvent('orgContextChanged'));
         window.location.reload();
     };
 
     if (!isAdmin) return null;
 
-    const selectedOrg = organizations.find(org => org.id === selectedOrgId);
-    const selectedOrgName = selectedOrg?.name || 'Organization';
+    const isHome = !selectedOrgId || selectedOrgId === HOME_VALUE;
+    const selectedOrg = !isHome ? organizations.find(org => org.id === selectedOrgId) : null;
+    const selectedOrgName = selectedOrg?.name || (isHome ? 'Home' : 'Organization');
 
     if (loading && organizations.length === 0) {
         return (
@@ -108,7 +119,7 @@ export function OrgSwitcher() {
 
     return (
         <div className="flex items-center gap-2 min-w-0">
-            <Select value={selectedOrgId} onValueChange={handleValueChange}>
+            <Select value={isHome ? HOME_VALUE : selectedOrgId} onValueChange={handleValueChange}>
                 <SelectTrigger
                     title={selectedOrgName}
                     className="h-9 min-w-[140px] max-w-[320px] w-auto bg-background border-border text-foreground [&>span:last-child]:min-w-0 [&>span:last-child]:truncate"
@@ -119,6 +130,9 @@ export function OrgSwitcher() {
                     </SelectValue>
                 </SelectTrigger>
                 <SelectContent className="bg-background border-border text-foreground">
+                    <SelectItem value={HOME_VALUE} className="focus:bg-muted focus:text-foreground font-medium border-b border-border mb-1">
+                        Home
+                    </SelectItem>
                     {organizations.map((org) => (
                         <SelectItem key={org.id} value={org.id} className="focus:bg-muted focus:text-foreground">
                             {org.name}
