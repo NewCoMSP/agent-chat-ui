@@ -56,11 +56,14 @@ export function ProjectSwitcher() {
 
     React.useEffect(() => {
         fetchProjects();
-
-        // Refresh when org changes (using custom event or interval as a simple fallback)
         const handleFocus = () => fetchProjects();
+        const handleOrgContextChanged = () => fetchProjects();
         window.addEventListener('focus', handleFocus);
-        return () => window.removeEventListener('focus', handleFocus);
+        window.addEventListener('orgContextChanged', handleOrgContextChanged);
+        return () => {
+            window.removeEventListener('focus', handleFocus);
+            window.removeEventListener('orgContextChanged', handleOrgContextChanged);
+        };
     }, [fetchProjects]);
 
     const currentProject = threadId ? projects.find((p) => p.id === threadId) : null;
