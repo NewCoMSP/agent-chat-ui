@@ -47,6 +47,28 @@ interface GraphData {
     };
 }
 
+/** Parse decision commit message body (build_decision_commit_message format) for status/type. */
+function parseDecisionCommitMessage(messageFull: string | undefined): { status?: string; type?: string } {
+    if (!messageFull || typeof messageFull !== 'string') return {};
+    const out: { status?: string; type?: string } = {};
+    for (const line of messageFull.split('\n')) {
+        const t = line.trim();
+        if (t.startsWith('status:')) out.status = t.slice(6).trim();
+        else if (t.startsWith('type:')) out.type = t.slice(5).trim();
+    }
+    return out;
+}
+
+/** Map decision status to timeline badge label. */
+function decisionStatusLabel(status: string | undefined): string | null {
+    if (!status) return null;
+    const s = status.toLowerCase();
+    if (s === 'pending') return 'Proposed';
+    if (s === 'approved') return 'Approved';
+    if (s === 'rejected') return 'Rejected';
+    return status;
+}
+
 /** Type → display label (for legend and fallback). */
 const typeConfig: Record<string, { color: string; label: string }> = {
     DOMAIN: { color: '#64748b', label: 'Domain' },
@@ -310,8 +332,12 @@ export function WorldMapView({ embeddedInDecisions = false }: WorldMapViewProps 
             if (orgContext) headers['X-Organization-Context'] = orgContext;
             const res = await fetch(`/api/decisions?thread_id=${encodeURIComponent(threadId)}`, { headers });
             if (res.ok) {
-                const list = await res.json();
-                setKgDecisions(Array.isArray(list) ? list.filter((r: any) => r && r.id) : []);
+                const data = await res.json();
+                // Backend returns { decisions, org_phase } when org has NPDDecision; otherwise a plain array
+                const projectList = Array.isArray(data) ? data : (data?.decisions ?? []);
+                const orgList = data?.org_phase?.decisions ?? [];
+                const merged = [...orgList, ...projectList].filter((r: { id?: string }) => r && r.id);
+                setKgDecisions(merged);
             }
         } catch (e) { console.error('Decisions fetch error:', e); }
     };
@@ -1256,6 +1282,16 @@ export function WorldMapView({ embeddedInDecisions = false }: WorldMapViewProps 
                             <p className="text-[10px] text-muted-foreground">
                                 {compareMode ? "Select two versions to compare" : `${kgHistory.total} snapshots available`}
                             </p>
+                            {!compareMode && (
+                                <p className="text-[10px] text-muted-foreground/70 mt-0.5" title="GitHub commits for NPDModel.json (KG+decision pair), not LangGraph thread history">
+                                    KG + decision history
+                                </p>
+                            )}
+                            {!compareMode && kgHistory.total === 0 && (
+                                <p className="text-[10px] text-muted-foreground/80 mt-1 italic">
+                                    Version history appears after the KG is saved (e.g. apply a decision or complete hydration). If you see history on GitHub for this project, the backend may be using a different branch — set DATA_GITHUB_STORAGE_BRANCH to match the branch in your GitHub URL.
+                                </p>
+                            )}
                         </div>
                         <UIButton variant="ghost" size="icon" className="h-6 w-6" onClick={() => {
                             setShowHistory(false);
@@ -1312,6 +1348,22 @@ export function WorldMapView({ embeddedInDecisions = false }: WorldMapViewProps 
                                                 {kgDecisions.some((d: any) => d.kg_version_sha === v.id) && (
                                                     <span className="text-[9px] text-purple-600 dark:text-purple-400">Decision</span>
                                                 )}
+                                                {(() => {
+                                                    const parsed = parseDecisionCommitMessage(v.message_full);
+                                                    const label = decisionStatusLabel(parsed.status);
+                                                    if (!label) return null;
+                                                    const s = parsed.status?.toLowerCase();
+                                                    return (
+                                                        <span className={cn(
+                                                            "text-[9px] px-1.5 py-0.5 rounded font-medium",
+                                                            s === 'pending' && "bg-amber-100 text-amber-800 dark:bg-amber-900/50 dark:text-amber-200",
+                                                            s === 'approved' && "bg-green-100 text-green-800 dark:bg-green-900/50 dark:text-green-200",
+                                                            s === 'rejected' && "bg-red-100 text-red-800 dark:bg-red-900/50 dark:text-red-200"
+                                                        )}>
+                                                            {label}
+                                                        </span>
+                                                    );
+                                                })()}
                                             </div>
                                         </div>
                                     ))}
@@ -1363,6 +1415,22 @@ export function WorldMapView({ embeddedInDecisions = false }: WorldMapViewProps 
                                                 {kgDecisions.some((d: any) => d.kg_version_sha === v.id) && (
                                                     <span className="text-[9px] text-purple-600 dark:text-purple-400">Decision</span>
                                                 )}
+                                                {(() => {
+                                                    const parsed = parseDecisionCommitMessage(v.message_full);
+                                                    const label = decisionStatusLabel(parsed.status);
+                                                    if (!label) return null;
+                                                    const s = parsed.status?.toLowerCase();
+                                                    return (
+                                                        <span className={cn(
+                                                            "text-[9px] px-1.5 py-0.5 rounded font-medium",
+                                                            s === 'pending' && "bg-amber-100 text-amber-800 dark:bg-amber-900/50 dark:text-amber-200",
+                                                            s === 'approved' && "bg-green-100 text-green-800 dark:bg-green-900/50 dark:text-green-200",
+                                                            s === 'rejected' && "bg-red-100 text-red-800 dark:bg-red-900/50 dark:text-red-200"
+                                                        )}>
+                                                            {label}
+                                                        </span>
+                                                    );
+                                                })()}
                                             </div>
                                         </div>
                                     ))}
@@ -1373,40 +1441,47 @@ export function WorldMapView({ embeddedInDecisions = false }: WorldMapViewProps 
                                     <div className="h-4 w-4 border-2 border-primary border-t-transparent rounded-full animate-spin" />
                                 </div>
                             )}
-                            {diffData && diffData.summary && (
-                                <div className="mt-4 p-3 bg-muted/50 rounded-md border border-border">
-                                    <div className="text-[10px] font-bold text-muted-foreground uppercase mb-2">Diff Summary</div>
-                                    <div className="space-y-1 text-xs">
-                                        <div className="flex justify-between">
-                                            <span className="text-green-500">Added:</span>
-                                            <span className="font-medium">{diffData.summary.added}</span>
-                                        </div>
-                                        <div className="flex justify-between">
-                                            <span className="text-yellow-500">Modified:</span>
-                                            <span className="font-medium">{diffData.summary.modified}</span>
-                                        </div>
-                                        <div className="flex justify-between">
-                                            <span className="text-red-500">Removed:</span>
-                                            <span className="font-medium">{diffData.summary.removed}</span>
-                                        </div>
-                                        <div className="pt-2 border-t border-border mt-2">
-                                            <div className="flex justify-between text-[10px] text-muted-foreground">
-                                                <span>Nodes: {diffData.summary.total_nodes_v1} → {diffData.summary.total_nodes_v2}</span>
+                            {(() => {
+                                const effectiveSummary = (selectedTimelineVersionId && timelineVersionDiff?.summary)
+                                    ? timelineVersionDiff.summary
+                                    : diffData?.summary;
+                                if (!effectiveSummary) return null;
+                                const semSummary = timelineVersionDiff?.diff?.summary?.semanticSummary ?? timelineVersionDiff?.summary?.semanticSummary ?? (diffData?.diff?.summary as { semanticSummary?: string })?.semanticSummary ?? (diffData?.summary as { semanticSummary?: string })?.semanticSummary;
+                                return (
+                                    <div className="mt-4 p-3 bg-muted/50 rounded-md border border-border">
+                                        <div className="text-[10px] font-bold text-muted-foreground uppercase mb-2">Diff Summary</div>
+                                        <div className="space-y-1 text-xs">
+                                            <div className="flex justify-between">
+                                                <span className="text-green-500">Added:</span>
+                                                <span className="font-medium">{effectiveSummary.added ?? 0}</span>
                                             </div>
-                                            <div className="flex justify-between text-[10px] text-muted-foreground">
-                                                <span>Links: {diffData.summary.total_links_v1} → {diffData.summary.total_links_v2}</span>
+                                            <div className="flex justify-between">
+                                                <span className="text-yellow-500">Modified:</span>
+                                                <span className="font-medium">{effectiveSummary.modified ?? 0}</span>
                                             </div>
+                                            <div className="flex justify-between">
+                                                <span className="text-red-500">Removed:</span>
+                                                <span className="font-medium">{effectiveSummary.removed ?? 0}</span>
+                                            </div>
+                                            {(effectiveSummary as { total_nodes_v1?: number }).total_nodes_v1 != null && (
+                                                <div className="pt-2 border-t border-border mt-2">
+                                                    <div className="flex justify-between text-[10px] text-muted-foreground">
+                                                        <span>Nodes: {(effectiveSummary as { total_nodes_v1?: number }).total_nodes_v1} → {(effectiveSummary as { total_nodes_v2?: number }).total_nodes_v2}</span>
+                                                    </div>
+                                                    <div className="flex justify-between text-[10px] text-muted-foreground">
+                                                        <span>Links: {(effectiveSummary as { total_links_v1?: number }).total_links_v1} → {(effectiveSummary as { total_links_v2?: number }).total_links_v2}</span>
+                                                    </div>
+                                                </div>
+                                            )}
+                                            {semSummary && (
+                                                <div className="pt-2 border-t border-border mt-2">
+                                                    <p className="text-[10px] text-muted-foreground italic">{semSummary as string}</p>
+                                                </div>
+                                            )}
                                         </div>
-                                        {(diffData.diff?.summary?.semanticSummary ?? (diffData.summary as { semanticSummary?: string })?.semanticSummary) && (
-                                            <div className="pt-2 border-t border-border mt-2">
-                                                <p className="text-[10px] text-muted-foreground italic">
-                                                    {(diffData.diff?.summary?.semanticSummary ?? (diffData.summary as { semanticSummary?: string })?.semanticSummary) as string}
-                                                </p>
-                                            </div>
-                                        )}
                                     </div>
-                                </div>
-                            )}
+                                );
+                            })()}
                         </div>
                     ) : (
                         <div className="flex-1 overflow-y-auto p-2 space-y-1 flex flex-col">
@@ -1453,6 +1528,11 @@ export function WorldMapView({ embeddedInDecisions = false }: WorldMapViewProps 
                                         <span className="text-xs font-medium text-foreground">
                                             {v.message || v.id}
                                         </span>
+                                        {v.message_full && v.message_full.trim() !== (v.message || '').trim() && (
+                                            <p className="text-[10px] text-muted-foreground whitespace-pre-wrap line-clamp-3 mt-0.5 border-t border-border/50 pt-1">
+                                                {v.message_full}
+                                            </p>
+                                        )}
                                         <div className="flex items-center justify-between">
                                             <span className="text-[10px] text-muted-foreground">{v.timestamp}</span>
                                             {v.sha && (
@@ -1469,6 +1549,22 @@ export function WorldMapView({ embeddedInDecisions = false }: WorldMapViewProps 
                                             {isDecision && (
                                                 <span className="text-[9px] text-purple-600 dark:text-purple-400">Decision</span>
                                             )}
+                                            {(() => {
+                                                const parsed = parseDecisionCommitMessage(v.message_full);
+                                                const label = decisionStatusLabel(parsed.status);
+                                                if (!label) return null;
+                                                const s = parsed.status?.toLowerCase();
+                                                return (
+                                                    <span className={cn(
+                                                        "text-[9px] px-1.5 py-0.5 rounded font-medium",
+                                                        s === 'pending' && "bg-amber-100 text-amber-800 dark:bg-amber-900/50 dark:text-amber-200",
+                                                        s === 'approved' && "bg-green-100 text-green-800 dark:bg-green-900/50 dark:text-green-200",
+                                                        s === 'rejected' && "bg-red-100 text-red-800 dark:bg-red-900/50 dark:text-red-200"
+                                                    )}>
+                                                        {label}
+                                                    </span>
+                                                );
+                                            })()}
                                         </div>
                                     </div>
                                 );
@@ -1500,6 +1596,16 @@ export function WorldMapView({ embeddedInDecisions = false }: WorldMapViewProps 
                                                         <span className="text-red-500">Removed:</span>
                                                         <span className="font-medium">{timelineVersionDiff.summary.removed ?? 0}</span>
                                                     </div>
+                                                    {(timelineVersionDiff.summary as { total_nodes_v1?: number }).total_nodes_v1 != null && (
+                                                        <div className="pt-2 border-t border-border mt-2 space-y-0.5">
+                                                            <div className="flex justify-between text-[10px] text-muted-foreground">
+                                                                <span>Nodes: {(timelineVersionDiff.summary as { total_nodes_v1?: number }).total_nodes_v1} → {(timelineVersionDiff.summary as { total_nodes_v2?: number }).total_nodes_v2}</span>
+                                                            </div>
+                                                            <div className="flex justify-between text-[10px] text-muted-foreground">
+                                                                <span>Links: {(timelineVersionDiff.summary as { total_links_v1?: number }).total_links_v1} → {(timelineVersionDiff.summary as { total_links_v2?: number }).total_links_v2}</span>
+                                                            </div>
+                                                        </div>
+                                                    )}
                                                     {timelineVersionDiff.summary.semanticSummary && (
                                                         <p className="text-[10px] text-muted-foreground italic pt-1 border-t border-border mt-1">
                                                             {timelineVersionDiff.summary.semanticSummary}

@@ -75,7 +75,7 @@ export function usePendingDecisions(threadId: string | undefined): {
         (r: DecisionRecord) =>
           r &&
           typeof r.id === "string" &&
-          r.status === "pending" &&
+          (r.status === "pending" || r.status === "proposed") &&
           !(r as { superseded_by?: string }).superseded_by
       ) as DecisionRecord[];
       setPending(pendingRecords.map((r) => recordToPreviewItem(r, threadId)));

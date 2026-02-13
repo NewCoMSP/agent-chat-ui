@@ -1,4 +1,20 @@
 /**
+ * Decision types that conclude the phase (thread boundary). Mirrors backend kg_decision_pair.PHASE_CHANGE_DECISION_TYPES.
+ * Used to show "Phase boundary" badge in Decisions panel when backend does not send is_phase_change (e.g. org fork rows).
+ */
+export const PHASE_CHANGE_DECISION_TYPES = new Set([
+  "propose_project",
+  "project_from_upload",
+  "propose_organization",
+  "organization_from_upload",
+  "create_organization",
+]);
+
+export function isPhaseChangeDecisionType(type: string): boolean {
+  return PHASE_CHANGE_DECISION_TYPES.has((type || "").trim());
+}
+
+/**
  * Schema-driven phase inference for decisions.
  * Mirrors backend decisions_loader._ORG_PHASE_TYPES for sync fallback when
  * GET /config/decision-types hasn't loaded yet. Single source of truth is backend;

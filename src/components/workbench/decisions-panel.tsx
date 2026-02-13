@@ -16,7 +16,7 @@ import { WorldMapView } from "./world-map-view";
 import { ErrorBoundary } from "@/components/error-boundary";
 import { useStreamContext } from "@/providers/Stream";
 import type { DecisionSummary } from "@/lib/diff-types";
-import { inferPhaseFromType } from "@/lib/decision-types";
+import { inferPhaseFromType, isPhaseChangeDecisionType } from "@/lib/decision-types";
 import { AlertCircle, PanelRight, ArrowLeft, GitCompare, Globe } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
@@ -85,6 +85,8 @@ type DecisionRow = {
   item?: UnifiedPreviewItem;
   kg_version_sha?: string;
   args?: Record<string, unknown>;
+  /** Phase boundary (thread concluded); show badge */
+  is_phase_change?: boolean;
 };
 
 function getArtifactDisplayName(row: DecisionRow): string | undefined {
@@ -273,6 +275,7 @@ export function DecisionsPanel() {
       status: (d.status === "approved" ? "approved" : "rejected") as "approved" | "rejected",
       time: 0,
       phase: "Organization" as Phase,
+      is_phase_change: isPhaseChangeDecisionType(d.type),
     }));
     const pendingRows: DecisionRow[] = pending.map((item) => ({
       id: item.id,
@@ -283,6 +286,7 @@ export function DecisionsPanel() {
       phase: (item.phase ?? inferPhase(item.type)) as Phase,
       item,
       args: item.data?.args as Record<string, unknown> | undefined,
+      is_phase_change: isPhaseChangeDecisionType(item.type),
     }));
     const processedRows: DecisionRow[] = processed.map((p) => ({
       id: p.id,
@@ -293,6 +297,7 @@ export function DecisionsPanel() {
       phase: (p.phase as Phase) ?? (inferPhase(p.type) as Phase),
       kg_version_sha: p.kg_version_sha,
       args: p.args,
+      is_phase_change: p.is_phase_change ?? isPhaseChangeDecisionType(p.type),
     }));
     return [...orgRows, ...pendingRows, ...processedRows];
   }, [orgPhase?.decisions, pending, processed, inferPhase]);
@@ -439,9 +444,16 @@ export function DecisionsPanel() {
                           </span>
                         </td>
                         <td className="py-2 px-3">
-                          <span className="rounded-md bg-muted px-1.5 py-0.5 text-xs font-medium">
-                            {getTypeLabel(row.type)}
-                          </span>
+                          <div className="flex flex-wrap items-center gap-1">
+                            <span className="rounded-md bg-muted px-1.5 py-0.5 text-xs font-medium">
+                              {getTypeLabel(row.type)}
+                            </span>
+                            {row.is_phase_change && (
+                              <span className="rounded border border-amber-500/50 bg-amber-500/10 px-1.5 py-0.5 text-xs text-amber-700 dark:text-amber-400" title="Thread boundary: phase concluded, new thread started">
+                                Phase boundary
+                              </span>
+                            )}
+                          </div>
                         </td>
                         <td className="py-2 px-3 truncate max-w-[200px]" title={getDecisionDisplayTitle(row)}>
                           {getDecisionDisplayTitle(row)}

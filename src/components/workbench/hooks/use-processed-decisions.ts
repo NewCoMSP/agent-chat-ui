@@ -9,8 +9,10 @@ import { inferPhaseFromType } from "@/lib/decision-types";
 
 const STORAGE_KEY_PREFIX = "reflexion_processed_decisions_";
 const MAX_ITEMS = 500;
-/** Fewer items when storage quota exceeded; omit preview_data to reduce size. */
-const MAX_STORAGE_ITEMS = 100;
+/** Cap items stored in localStorage to avoid QuotaExceededError (~5MB limit). Omit preview_data; keep only recent. */
+const MAX_STORAGE_ITEMS = 80;
+/** Max chars per stored item (title + outcome_description) to avoid single huge entries. */
+const MAX_CHARS_PER_ITEM = 800;
 
 export interface ProcessedDecision {
   id: string;
@@ -28,6 +30,8 @@ export interface ProcessedDecision {
   preview_data?: Record<string, unknown>;
   /** Original decision args (artifact_id, cycle_id, preview_data.filename) for table display: subject + enrichment cycle label */
   args?: Record<string, unknown>;
+  /** True when this decision type concludes the phase (thread boundary); show "Phase boundary" badge */
+  is_phase_change?: boolean;
 }
 
 /** Backend DecisionRecord shape (GET /decisions response item). */
@@ -45,6 +49,7 @@ interface DecisionRecord {
   artifact_id?: string;
   args?: Record<string, unknown>;
   kg_version_sha?: string;
+  is_phase_change?: boolean;
 }
 
 interface ProjectListItem {
@@ -97,9 +102,13 @@ function loadFromStorage(threadId: string | undefined): ProcessedDecision[] {
   }
 }
 
-/** Slim representation for localStorage to avoid QuotaExceededError (omit large preview_data). */
+/** Slim representation for localStorage: omit preview_data and truncate long text to avoid QuotaExceededError. */
 function toStorageFormat(items: ProcessedDecision[]): ProcessedDecision[] {
-  return items.map(({ preview_data: _pd, ...rest }) => rest as ProcessedDecision);
+  return items.slice(0, MAX_STORAGE_ITEMS).map(({ preview_data: _pd, title, outcome_description, ...rest }) => {
+    const t = typeof title === "string" && title.length > MAX_CHARS_PER_ITEM ? title.slice(0, MAX_CHARS_PER_ITEM) + "…" : title;
+    const o = typeof outcome_description === "string" && outcome_description.length > MAX_CHARS_PER_ITEM ? outcome_description.slice(0, MAX_CHARS_PER_ITEM) + "…" : outcome_description;
+    return { ...rest, title: t, outcome_description: o } as ProcessedDecision;
+  });
 }
 
 function persistToStorage(keyId: string | undefined, items: ProcessedDecision[]): void {
@@ -109,8 +118,8 @@ function persistToStorage(keyId: string | undefined, items: ProcessedDecision[])
   try {
     localStorage.setItem(key, JSON.stringify(slim));
   } catch (e) {
-    if ((e as DOMException)?.name === "QuotaExceededError" && slim.length > MAX_STORAGE_ITEMS) {
-      const trimmed = slim.slice(0, MAX_STORAGE_ITEMS);
+    if ((e as DOMException)?.name === "QuotaExceededError" && slim.length > 20) {
+      const trimmed = toStorageFormat(items.slice(0, 20));
       try {
         localStorage.setItem(key, JSON.stringify(trimmed));
       } catch (e2) {
@@ -138,6 +147,7 @@ function mapRecordToProcessed(r: DecisionRecord): ProcessedDecision {
     ...(r.kg_version_sha != null ? { kg_version_sha: r.kg_version_sha } : {}),
     ...(r.args?.preview_data != null ? { preview_data: r.args.preview_data as Record<string, unknown> } : {}),
     ...(r.args != null ? { args: r.args } : {}),
+    ...(r.is_phase_change != null ? { is_phase_change: r.is_phase_change } : {}),
   };
 }
 
