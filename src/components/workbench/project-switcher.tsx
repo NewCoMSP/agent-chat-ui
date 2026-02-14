@@ -10,12 +10,20 @@ import {
     SelectValue,
 } from "@/components/ui/select";
 import { useQueryState } from "nuqs";
+import { useRouter } from "next/navigation";
 import { useSession } from "next-auth/react";
 import { useStreamContext } from "@/providers/Stream";
+import { useRouteScope } from "@/hooks/use-route-scope";
 
 interface Project {
     id: string;
     name: string;
+    thread_id?: string;
+}
+
+/** URL segment for a project: thread_id so LangGraph gets the real thread; fallback to id for backwards compat. */
+function projectSegment(project: Project): string {
+    return project.thread_id ?? project.id;
 }
 
 // Match sidebar display: meaningful names as-is, UUIDs as "Project xxxxxxxx"
@@ -30,8 +38,11 @@ function formatProjectLabel(project: Project): string {
 
 export function ProjectSwitcher() {
     const { data: _session } = useSession();
+    const router = useRouter();
+    const { orgId, projectId } = useRouteScope();
     const [projects, setProjects] = React.useState<Project[]>([]);
     const [threadId, setThreadId] = useQueryState("threadId");
+    const effectiveProjectId = projectId ?? threadId ?? undefined;
     const [_loading, setLoading] = React.useState(false);
     const [creatingProject, setCreatingProject] = React.useState(false);
     const stream = useStreamContext();
@@ -70,7 +81,7 @@ export function ProjectSwitcher() {
         };
     }, [fetchProjects]);
 
-    const currentProject = threadId ? projects.find((p) => p.id === threadId) : null;
+    const currentProject = effectiveProjectId ? projects.find((p) => projectSegment(p) === effectiveProjectId) : null;
     const currentLabel = currentProject ? formatProjectLabel(currentProject) : null;
     const triggerTitle = currentProject ? (currentProject.name || currentProject.id) : undefined;
 
@@ -79,22 +90,25 @@ export function ProjectSwitcher() {
             if (createNewThreadWithContext && !creatingProject) {
                 setCreatingProject(true);
                 try {
-                    await createNewThreadWithContext();
+                    const newId = await createNewThreadWithContext();
                     window.dispatchEvent(new CustomEvent("orgContextChanged"));
+                    if (newId && orgId) router.push(`/org/${encodeURIComponent(orgId)}/project/${encodeURIComponent(newId)}/map`);
                 } finally {
                     setCreatingProject(false);
                 }
             } else {
                 setThreadId(null);
+                if (orgId) router.push(`/org/${encodeURIComponent(orgId)}/map`);
             }
         } else {
-            setThreadId(val);
+            if (orgId) router.push(`/org/${encodeURIComponent(orgId)}/project/${encodeURIComponent(val)}/map`);
+            else setThreadId(val);
         }
-    }, [createNewThreadWithContext, creatingProject, setThreadId]);
+    }, [createNewThreadWithContext, creatingProject, setThreadId, orgId, router]);
 
     return (
         <Select
-            value={threadId || "new"}
+            value={effectiveProjectId || "new"}
             onValueChange={handleValueChange}
             disabled={creatingProject}
         >
@@ -109,7 +123,7 @@ export function ProjectSwitcher() {
             </SelectTrigger>
             <SelectContent className="bg-background border-border text-foreground">
                 {projects.map((project) => (
-                    <SelectItem key={project.id} value={project.id} className="focus:bg-muted focus:text-foreground italic">
+                    <SelectItem key={project.id} value={projectSegment(project)} className="focus:bg-muted focus:text-foreground italic">
                         {formatProjectLabel(project)}
                     </SelectItem>
                 ))}

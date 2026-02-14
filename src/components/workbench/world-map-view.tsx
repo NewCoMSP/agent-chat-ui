@@ -192,7 +192,8 @@ export function WorldMapView({ embeddedInDecisions = false }: WorldMapViewProps 
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
     const [selectedNode, setSelectedNode] = useState<Node | null>(null);
-    const [threadId] = useQueryState("threadId");
+    const [threadIdFromUrl] = useQueryState("threadId");
+    const threadId = (stream as any)?.threadId ?? threadIdFromUrl ?? undefined;
 
     const [kgHistory, setKgHistory] = useState<{ versions: any[], total: number } | null>(null);
     const [kgDecisions, setKgDecisions] = useState<{ id: string; type: string; title: string; status?: string; kg_version_sha?: string }[]>([]);
@@ -444,9 +445,6 @@ export function WorldMapView({ embeddedInDecisions = false }: WorldMapViewProps 
         }
     };
 
-    /** Poll interval so KG updates from other users (same project) appear without refresh. */
-    const KG_POLL_INTERVAL_MS = 15_000;
-
     const fetchData = async (version?: string, preserveDiff: boolean = false, silent: boolean = false, versionSource?: string) => {
         try {
             if (!silent) {
@@ -495,16 +493,9 @@ export function WorldMapView({ embeddedInDecisions = false }: WorldMapViewProps 
     };
 
     const workbenchRefreshKey = (stream as any)?.workbenchRefreshKey ?? 0;
-    const { connected: sseConnected } = useThreadUpdates(threadId ?? undefined, {
+    useThreadUpdates(threadId ?? undefined, {
         onKgUpdate: () => fetchData(undefined, false, true),
     });
-
-    // Multi-user: poll KG when SSE not connected and viewing current map so updates from other users appear
-    useEffect(() => {
-        if (!threadId || sseConnected || activeVersion || (compareMode && diffData)) return;
-        const intervalId = setInterval(() => fetchData(undefined, false, true), KG_POLL_INTERVAL_MS);
-        return () => clearInterval(intervalId);
-    }, [threadId, sseConnected, activeVersion, compareMode, diffData]);
 
     // When we have a project (threadId), always fetch from API so map/artifacts show persisted KG
     // (uploaded/enriched). When no threadId, use filtered_kg if streamed or fallback to fetch.

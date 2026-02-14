@@ -3,6 +3,7 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useQueryState } from "nuqs";
+import { useRouteScope } from "@/hooks/use-route-scope";
 import { useUnifiedPreviews, UnifiedPreviewItem } from "./hooks/use-unified-previews";
 import { usePendingDecisions } from "./hooks/use-pending-decisions";
 import { useProcessedDecisions, ProcessedDecision, type OrgPhaseLineage } from "./hooks/use-processed-decisions";
@@ -22,8 +23,6 @@ import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 
 const VIEW_STORAGE_KEY = "reflexion_decisions_view";
-/** Poll interval so decisions from other users (same project) appear without refresh. */
-const DECISIONS_POLL_INTERVAL_MS = 15_000;
 type ViewMode = "split" | "map";
 
 function getStoredView(): ViewMode {
@@ -163,17 +162,20 @@ export function DecisionsPanel() {
   const router = useRouter();
   const [threadIdFromUrl] = useQueryState("threadId");
   const threadId = (stream as any)?.threadId ?? threadIdFromUrl ?? undefined;
+  const { orgId, projectId } = useRouteScope();
   const [versionParam, setVersionParam] = useQueryState("version"); // In map layout: selected decision's KG version → map shows that version + diff
 
   const mapCompareHref = threadId
-    ? `/workbench/map?threadId=${encodeURIComponent(threadId)}&compare=1`
-    : "/workbench/map?compare=1";
+    ? (orgId
+        ? `/org/${encodeURIComponent(orgId)}/project/${encodeURIComponent(projectId ?? threadId)}/map?compare=1`
+        : `/map?threadId=${encodeURIComponent(threadId)}&compare=1`)
+    : "/map?compare=1";
 
   const allPreviews = useUnifiedPreviews();
   const { pending: pendingFromApi, isLoading: pendingApiLoading, refetch: refetchPending } = usePendingDecisions(threadId);
   const { processed, orgPhase, addProcessed, isLoading, refetch: refetchProcessed } = useProcessedDecisions(threadId);
   const { inferPhase } = useDecisionTypesConfig();
-  const { connected: sseConnected } = useThreadUpdates(threadId, {
+  useThreadUpdates(threadId, {
     onDecisionsUpdate: () => {
       refetchPending();
       refetchProcessed();
@@ -185,16 +187,6 @@ export function DecisionsPanel() {
   useEffect(() => {
     if (threadId && workbenchRefreshKey > 0) refetchPending();
   }, [threadId, workbenchRefreshKey, refetchPending]);
-
-  // Multi-user: poll decisions when SSE is not connected so updates from other users appear
-  useEffect(() => {
-    if (!threadId || sseConnected) return;
-    const intervalId = setInterval(() => {
-      refetchPending();
-      refetchProcessed();
-    }, DECISIONS_POLL_INTERVAL_MS);
-    return () => clearInterval(intervalId);
-  }, [threadId, sseConnected, refetchPending, refetchProcessed]);
 
   const processedIds = useMemo(() => new Set(processed.map((p) => p.id)), [processed]);
   // Logical key for link/enrich so one upload = one link + one enrich (dedupe API vs stream proposals)
@@ -653,7 +645,7 @@ function ProcessedRow({
       threadId,
       version: decision.kg_version_sha,
     });
-    router.push(`/workbench/map?${params.toString()}`);
+    router.push(`/map?${params.toString()}`);
   }, [threadId, decision.kg_version_sha, router]);
 
   return (

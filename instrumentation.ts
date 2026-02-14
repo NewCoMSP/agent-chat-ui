@@ -18,10 +18,4 @@ export async function register() {
   process.stdout.write(line);
   process.stderr.write(line);
 
-  try {
-    // Import server-side OpenTelemetry setup
-    await import('./src/lib/otel-server');
-  } catch (error) {
-    console.error('[OTEL] Failed to initialize server-side OpenTelemetry:', error);
-  }
 }

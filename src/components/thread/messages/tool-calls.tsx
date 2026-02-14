@@ -58,7 +58,7 @@ function DecisionProposalCard({
     (stream as any)?.setWorkbenchView?.("decisions")?.catch?.(() => {});
     const threadId = (stream as any)?.threadId;
     const q = threadId ? `?threadId=${encodeURIComponent(threadId)}` : "";
-    router.push(`/workbench/decisions${q}`);
+    router.push(`/decisions${q}`);
   };
 
   return (
