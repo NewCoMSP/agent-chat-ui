@@ -233,8 +233,8 @@ export function ApprovalCard({ item, stream, onDecisionProcessed, onViewFullProp
           }
           (stream as any).triggerWorkbenchRefresh?.();
           const href = projectId
-            ? `/workbench/map?threadId=${encodeURIComponent(projectId)}&view=artifacts`
-            : "/workbench/map?view=artifacts";
+            ? `/map?threadId=${encodeURIComponent(projectId)}&view=artifacts`
+            : "/map?view=artifacts";
           router.push(href);
         } catch (error: any) {
           console.error("[ApprovalCard] Error applying project proposal:", error);
@@ -305,8 +305,8 @@ export function ApprovalCard({ item, stream, onDecisionProcessed, onViewFullProp
           (stream as any).triggerWorkbenchRefresh?.();
           // Navigate to map view to see the transition
           const href = threadId
-            ? `/workbench/map?threadId=${encodeURIComponent(threadId)}&view=artifacts`
-            : "/workbench/map?view=artifacts";
+            ? `/map?threadId=${encodeURIComponent(threadId)}&view=artifacts`
+            : "/map?view=artifacts";
           router.push(href);
         } catch (error: any) {
           console.error("[ApprovalCard] Error applying hydration completion:", error);

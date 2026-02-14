@@ -67,7 +67,6 @@ These use `getBackendBaseUrl()` from `@/lib/backend-proxy` (or `LANGGRAPH_API_UR
 | UI route | Purpose |
 |----------|---------|
 | /api/health | Next.js app health; returns `{ status: "ok" }`. Does **not** call backend /health. |
-| /api/langsmith-config | Returns LangSmith config (API key, endpoint, project) for client OTEL. |
 | /api/auth/[...nextauth] | NextAuth.js (session, sign-in, etc.). |
 
 ---
