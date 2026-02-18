@@ -260,6 +260,11 @@ export function WorldMapView({ embeddedInDecisions = false }: WorldMapViewProps 
     const [legendCollapsed, setLegendCollapsed] = useState<Record<string, boolean>>({});
     /** Workflow strip for bottom panel (same left-to-right as header). */
     const [workflowStrip, setWorkflowStrip] = useState<{ nodes: { id: string; label: string }[]; active_node?: string } | null>(null);
+    /** Project risk summary (in-scope, covered, uncovered) for map context pane. */
+    const [riskSummary, setRiskSummary] = useState<{ in_scope: number; covered: number; uncovered: number } | null>(null);
+    /** Phase-level risk aggregates (phase_id, in_scope, covered, uncovered) for map hierarchy. */
+    const [phaseRiskAggregates, setPhaseRiskAggregates] = useState<{ phase_id: string; in_scope: number; covered: number; uncovered: number }[]>([]);
+    const [loadingRiskSummary, setLoadingRiskSummary] = useState(false);
     /** Bottom panel (workflow | filter | search | zoom) collapsed. */
     const [bottomPanelCollapsed, setBottomPanelCollapsed] = useState(false);
 
@@ -279,6 +284,41 @@ export function WorldMapView({ embeddedInDecisions = false }: WorldMapViewProps 
             .catch(() => { if (!cancelled) setWorkflowStrip(null); });
         return () => { cancelled = true; };
     }, [threadId, embeddedInDecisions, (stream as any)?.values?.active_agent]);
+
+    // Fetch project risk summary for map context pane (Phase 1 — project-level risk)
+    useEffect(() => {
+        if (!threadId || embeddedInDecisions) {
+            setRiskSummary(null);
+            return;
+        }
+        let cancelled = false;
+        setLoadingRiskSummary(true);
+        const orgContext = localStorage.getItem('reflexion_org_context');
+        const headers: Record<string, string> = {};
+        if (orgContext) headers['X-Organization-Context'] = orgContext;
+        fetch(`/api/project/risk-summary?thread_id=${encodeURIComponent(threadId)}`, { headers })
+            .then((r) => (r.ok ? r.json() : null))
+            .then((data: { in_scope?: number; covered?: number; uncovered?: number; phase_aggregates?: { phase_id: string; in_scope: number; covered: number; uncovered: number }[] } | null) => {
+                if (cancelled) return;
+                if (data && typeof data.in_scope === 'number') {
+                    setRiskSummary({
+                        in_scope: data.in_scope,
+                        covered: data.covered ?? 0,
+                        uncovered: data.uncovered ?? 0,
+                    });
+                    setPhaseRiskAggregates(Array.isArray(data.phase_aggregates) ? data.phase_aggregates : []);
+                    if (process.env.NODE_ENV === 'development') {
+                        console.info('[Map context] Project risk: in_scope=%s covered=%s uncovered=%s', data.in_scope, data.covered, data.uncovered);
+                    }
+                } else {
+                    setRiskSummary(null);
+                    setPhaseRiskAggregates([]);
+                }
+            })
+            .catch(() => { if (!cancelled) setRiskSummary(null); })
+            .finally(() => { if (!cancelled) setLoadingRiskSummary(false); });
+        return () => { cancelled = true; };
+    }, [threadId, embeddedInDecisions]);
 
     useEffect(() => {
         if (selectedTimelineVersionId) {
@@ -1847,6 +1887,27 @@ export function WorldMapView({ embeddedInDecisions = false }: WorldMapViewProps 
                             </div>
                         )}
                         <div className="h-4 w-px bg-border shrink-0" />
+                        {/* Project risk summary (Epic #143 — map context pane) */}
+                        {threadId && (loadingRiskSummary || riskSummary !== null) && (
+                            <div className="flex items-center gap-1.5 shrink-0 px-2 py-1 rounded-md border border-border bg-background/50">
+                                <span className="text-[10px] text-muted-foreground font-medium uppercase tracking-wider shrink-0">Risks</span>
+                                {loadingRiskSummary ? (
+                                    <span className="text-[10px] text-muted-foreground">…</span>
+                                ) : riskSummary ? (
+                                    <span className="text-[10px] tabular-nums">
+                                        <span className="text-foreground">{riskSummary.in_scope}</span>
+                                        <span className="text-muted-foreground mx-0.5">in scope</span>
+                                        <span className="text-muted-foreground mx-1">·</span>
+                                        <span className="text-green-600 dark:text-green-400">{riskSummary.covered}</span>
+                                        <span className="text-muted-foreground mx-0.5">covered</span>
+                                        <span className="text-muted-foreground mx-1">·</span>
+                                        <span className={riskSummary.uncovered > 0 ? 'text-amber-600 dark:text-amber-400' : 'text-muted-foreground'}>{riskSummary.uncovered}</span>
+                                        <span className="text-muted-foreground mx-0.5">uncovered</span>
+                                    </span>
+                                ) : null}
+                            </div>
+                        )}
+                        <div className="h-4 w-px bg-border shrink-0" />
                         {/* Status filter: every decision has an impact on the world. Default = Active (approved only). */}
                         {data?.nodes?.length ? (
                             <div className="flex items-center gap-1.5 flex-wrap shrink-0">
@@ -1882,11 +1943,17 @@ export function WorldMapView({ embeddedInDecisions = false }: WorldMapViewProps 
                                         if (agentTypesPresent.length === 0) return null;
                                         const isCollapsed = legendCollapsed[agent.agentId] === true;
                                         const color = agentColors[agent.agentId] ?? '#888';
+                                        const phaseRisk = phaseRiskAggregates.find((p) => p.phase_id === agent.agentId);
                                         return (
                                             <div key={agent.agentId} className="rounded-md overflow-hidden border border-border" style={{ borderColor: `color-mix(in srgb, ${color} 65%, transparent)` }}>
                                                 <button type="button" onClick={() => setLegendCollapsed((prev) => ({ ...prev, [agent.agentId]: !prev[agent.agentId] }))} className={cn("w-full inline-flex items-center gap-1.5 rounded-t-md px-2 py-0.5 text-[10px] font-semibold border-b border-border transition-colors bg-muted/30 hover:bg-muted/50 text-foreground")} style={{ backgroundColor: `color-mix(in srgb, ${color} 22%, hsl(215,20%,25%))` }}>
                                                     {isCollapsed ? <ChevronRight className="h-3 w-3 text-muted-foreground shrink-0" /> : <ChevronDown className="h-3 w-3 text-muted-foreground shrink-0" />}
                                                     <span>{agent.agentName}</span>
+                                                    {phaseRisk != null && (phaseRisk.covered > 0 || phaseRisk.uncovered > 0) && (
+                                                        <span className="text-[9px] font-normal text-muted-foreground tabular-nums ml-1">
+                                                            Risks: {phaseRisk.covered} covered, {phaseRisk.uncovered} uncovered
+                                                        </span>
+                                                    )}
                                                 </button>
                                                 {!isCollapsed && (
                                                     <div className="bg-background/50 p-1.5 pt-1 space-y-1">

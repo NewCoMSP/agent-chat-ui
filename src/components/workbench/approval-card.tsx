@@ -712,8 +712,19 @@ export function ApprovalCard({ item, stream, onDecisionProcessed, onViewFullProp
             artifact_id: (data as any).artifact_id,
             ...(kg_version_sha != null ? { kg_version_sha } : {}),
           });
+          const recPhase = (data as any).recommended_next_phase as string | undefined;
+          const recReason = (data as any).recommended_next_reason as string | undefined;
+          const recLine =
+            recPhase != null || (recReason != null && recReason.trim() !== "")
+              ? `Recommended next: ${recPhase ?? "—"} — ${(recReason ?? "").trim() || "—"}`
+              : "";
+          if (process.env.NODE_ENV === "development" && recLine) {
+            console.info("[Decisions] Recommended next:", recLine);
+          }
           toast.success("Artifact applied", {
-            description: `Saved ${artifactType.replace(/_/g, " ")}.`,
+            description: recLine
+              ? `Saved ${artifactType.replace(/_/g, " ")}. ${recLine}`
+              : `Saved ${artifactType.replace(/_/g, " ")}.`,
           });
           if (typeof (stream as any).updateState === "function" && (data as any).active_agent) {
             await (stream as any).updateState({ values: { active_agent: (data as any).active_agent } });
