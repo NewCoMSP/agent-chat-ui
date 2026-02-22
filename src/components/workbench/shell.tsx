@@ -74,6 +74,9 @@ export function WorkbenchShell({ children }: { children: React.ReactNode }) {
     type WorkflowDiagramStrip = { workflow_id: string; name?: string; version?: string; nodes: { id: string; label: string }[]; active_node?: string };
     const [workflowStrip, setWorkflowStrip] = useState<WorkflowDiagramStrip | null>(null);
     const [workflowStripLoading, setWorkflowStripLoading] = useState(false);
+    // Packs for display (issue 147): pack_type from thread configurable → show pack name in header
+    type PackItem = { pack_type_id: string; name: string; description?: string };
+    const [packs, setPacks] = useState<PackItem[]>([]);
     const [workflowSelectOpen, setWorkflowSelectOpen] = useState(false);
     // Delay unmounting the workflow Select by one frame so Radix portal closes first (avoids removeChild NotFoundError)
     const prevWouldShowWorkflowSelectRef = useRef(false);
@@ -112,6 +115,19 @@ export function WorkbenchShell({ children }: { children: React.ReactNode }) {
             .finally(() => { if (!cancelled) setWorkflowStripLoading(false); });
         return () => { cancelled = true; };
     }, [pathname, activeAgent]);
+
+    // Fetch packs once for pack label in header (issue 147)
+    useEffect(() => {
+        if (pathname == null || pathname === "/") return;
+        let cancelled = false;
+        fetch("/api/auth/packs")
+            .then((r) => (r.ok ? r.json() : null))
+            .then((data: PackItem[] | null) => {
+                if (!cancelled && Array.isArray(data)) setPacks(data);
+            })
+            .catch(() => {});
+        return () => { cancelled = true; };
+    }, [pathname]);
 
     // Nodes to show in strip and dropdown (from API); hide Administration for non-admins
     const displayNodes = useMemo(
@@ -388,6 +404,21 @@ export function WorkbenchShell({ children }: { children: React.ReactNode }) {
                             <Breadcrumbs />
                         </Suspense>
                         <span className="text-muted-foreground/50 shrink-0">/</span>
+                        {/* Pack label (issue 147): from thread configurable.pack_type */}
+                        {(() => {
+                            const configurable = values?.configurable as { pack_type?: string } | undefined;
+                            const packType = configurable?.pack_type;
+                            const packName = packType ? (packs.find((p) => p.pack_type_id === packType)?.name ?? packType) : null;
+                            return packName ? (
+                                <span className="text-xs text-muted-foreground shrink-0 whitespace-nowrap" title="Methodology pack for this thread">
+                                    Pack: {packName}
+                                </span>
+                            ) : null;
+                        })()}
+                        {(() => {
+                            const configurable = values?.configurable as { pack_type?: string } | undefined;
+                            return configurable?.pack_type ? <span className="text-muted-foreground/50 shrink-0">/</span> : null;
+                        })()}
                         {/* Workflow visualization (connects to breadcrumb); active node = agent selector */}
                         {workflowStripLoading ? (
                             <div className="h-6 w-24 bg-muted animate-pulse rounded shrink-0" aria-hidden />

@@ -29,6 +29,14 @@ interface Organization {
     id: string;
     name: string;
     workflow_id?: string;
+    pack_type?: string;
+}
+
+interface Pack {
+    pack_type_id: string;
+    name: string;
+    description?: string;
+    workflow_id?: string;
 }
 
 interface Branding {
@@ -61,6 +69,7 @@ export function OrganizationManagement() {
         id: "",
         name: "",
         workflow_id: "",
+        pack_type: "",
         organizationContent: "",
         iati_org_id: "",
         org_type_code: "",
@@ -76,6 +85,7 @@ export function OrganizationManagement() {
     });
     const [formData, setFormData] = useState(emptyOrgForm());
     const [workflows, setWorkflows] = useState<{ id: string; name: string }[]>([]);
+    const [packs, setPacks] = useState<Pack[]>([]);
     const [brandingFormData, setBrandingFormData] = useState<Branding>({
         name: "",
         brand_title: "",
@@ -100,7 +110,19 @@ export function OrganizationManagement() {
                 // Workflows optional for org edit
             }
         };
+        const loadPacks = async () => {
+            try {
+                const resp = await fetch("/api/auth/packs");
+                if (resp.ok) {
+                    const data = await resp.json();
+                    setPacks(Array.isArray(data) ? data : []);
+                }
+            } catch {
+                // Packs optional for org edit (issue 147)
+            }
+        };
         loadWorkflows();
+        loadPacks();
     }, []);
 
     const loadData = async () => {
@@ -147,6 +169,7 @@ export function OrganizationManagement() {
                 id: formData.id,
                 name: formData.name,
                 workflow_id: formData.workflow_id || undefined,
+                pack_type: formData.pack_type || undefined,
             };
             const orgMdKeys = ["iati_org_id", "org_type_code", "strategy_summary", "env_type", "governance_type", "authority_limits", "flow_type", "sector_vocabulary", "kg_version", "org_root_id", "provisioning_state"];
             orgMdKeys.forEach((k) => { if (formData[k as keyof typeof formData]) body[k] = formData[k as keyof typeof formData]; });
@@ -192,9 +215,10 @@ export function OrganizationManagement() {
 
         try {
             setSubmitting(true);
-            const body: { name: string; workflow_id?: string; organization_content?: string } = {
+            const body: { name: string; workflow_id?: string; pack_type?: string; organization_content?: string } = {
                 name: formData.name,
                 workflow_id: formData.workflow_id || undefined,
+                pack_type: formData.pack_type || undefined,
             };
             body.organization_content = formData.organizationContent;
             const resp = await fetch(`/api/organizations/${editingOrg.id}`, {
@@ -252,7 +276,7 @@ export function OrganizationManagement() {
 
     const handleOpenEdit = async (org: Organization) => {
         setEditingOrg(org);
-        setFormData({ ...emptyOrgForm(), id: org.id, name: org.name, workflow_id: org.workflow_id ?? "" });
+        setFormData({ ...emptyOrgForm(), id: org.id, name: org.name, workflow_id: org.workflow_id ?? "", pack_type: org.pack_type ?? "" });
         setIsEditDialogOpen(true);
         try {
             const resp = await fetch(`/api/organizations/${org.id}/content`);
@@ -447,6 +471,29 @@ export function OrganizationManagement() {
                                 </SelectContent>
                             </Select>
                         </div>
+                        {packs.length > 0 && (
+                            <div className="space-y-2">
+                                <Label htmlFor="create-pack">Default pack</Label>
+                                <Select
+                                    value={formData.pack_type || "default"}
+                                    onValueChange={(v) => setFormData({ ...formData, pack_type: v === "default" ? "" : v })}
+                                >
+                                    <SelectTrigger id="create-pack">
+                                        <SelectValue placeholder="Default (system)" />
+                                    </SelectTrigger>
+                                    <SelectContent>
+                                        {packs.map((p) => (
+                                            <SelectItem key={p.pack_type_id} value={p.pack_type_id}>
+                                                {p.pack_type_id === "default" ? "Default (system)" : (p.name || p.pack_type_id)}
+                                            </SelectItem>
+                                        ))}
+                                    </SelectContent>
+                                </Select>
+                                <p className="text-xs text-muted-foreground">
+                                    Methodology bundle (phases + agents). New threads use this pack for this organization.
+                                </p>
+                            </div>
+                        )}
                         <div className="border-t pt-4 space-y-3">
                             <p className="text-sm font-medium text-muted-foreground">Organization details (optional — saved to organization.md)</p>
                             <div className="grid grid-cols-2 gap-3">
@@ -551,6 +598,29 @@ export function OrganizationManagement() {
                                 New chat threads and projects use this workflow for this organization.
                             </p>
                         </div>
+                        {packs.length > 0 && (
+                            <div className="space-y-2">
+                                <Label htmlFor="edit-org-pack">Default pack</Label>
+                                <Select
+                                    value={formData.pack_type || "default"}
+                                    onValueChange={(v) => setFormData({ ...formData, pack_type: v === "default" ? "" : v })}
+                                >
+                                    <SelectTrigger id="edit-org-pack">
+                                        <SelectValue placeholder="Default (system)" />
+                                    </SelectTrigger>
+                                    <SelectContent>
+                                        {packs.map((p) => (
+                                            <SelectItem key={p.pack_type_id} value={p.pack_type_id}>
+                                                {p.pack_type_id === "default" ? "Default (system)" : (p.name || p.pack_type_id)}
+                                            </SelectItem>
+                                        ))}
+                                    </SelectContent>
+                                </Select>
+                                <p className="text-xs text-muted-foreground">
+                                    Methodology bundle (phases + agents). New threads use this pack for this organization.
+                                </p>
+                            </div>
+                        )}
                         <div className="space-y-2">
                             <Label htmlFor="edit-org-content">Organization document (organization.md)</Label>
                             <Textarea
