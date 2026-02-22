@@ -728,8 +728,10 @@ export function ApprovalCard({ item, stream, onDecisionProcessed, onViewFullProp
               ? `Saved ${artifactType.replace(/_/g, " ")}. ${recLine}`
               : `Saved ${artifactType.replace(/_/g, " ")}.`,
           });
-          if (typeof (stream as any).updateState === "function" && (data as any).active_agent) {
-            await (stream as any).updateState({ values: { active_agent: (data as any).active_agent } });
+          // Pre-fill next agent from apply response (user-sent next_agent or recommended_next_phase from backend)
+          const nextAgent = (data as any).active_agent ?? recPhase;
+          if (typeof (stream as any).updateState === "function" && nextAgent) {
+            await (stream as any).updateState({ values: { active_agent: nextAgent } });
           }
           (stream as any).triggerWorkbenchRefresh?.();
         } catch (error: any) {
