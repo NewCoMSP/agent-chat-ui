@@ -18,6 +18,8 @@ import { useUnifiedPreviews } from './hooks/use-unified-previews';
 import { useThreadUpdates } from './hooks/use-thread-updates';
 import { KgDiffDiagramView } from './kg-diff-diagram-view';
 import { apiFetch } from '@/lib/api-fetch';
+import { viewRegistry, type MapViewGraphData } from '@/lib/view-registry';
+import './map-view-registrations';
 
 interface Node extends d3.SimulationNodeDatum {
     id: string;
@@ -1931,102 +1933,83 @@ export function WorldMapView({ embeddedInDecisions = false, decisionsWithVersion
                             setSelectedNode(null);
                         }
                     }}>
-                        {viewMode === 'artifacts' ? (
-                    <ArtifactsView />
-                ) : (
-                    <>
-                        {loading && !data && (
-                            <div className="absolute inset-0 flex items-center justify-center bg-background z-30">
-                                <div className="text-center">
-                                    <div className="h-8 w-8 border-2 border-primary border-t-transparent rounded-full animate-spin mx-auto mb-4" />
-                                    <p className="text-xs text-muted-foreground">Initializing Knowledge Graph...</p>
-                                </div>
-                            </div>
-                        )}
-
-                        {error && (
-                            <div className="absolute inset-0 flex items-center justify-center bg-background z-30 p-6 text-center">
-                                <div>
-                                    <p className="text-destructive mb-4 font-mono text-sm leading-relaxed max-w-md mx-auto">Error: {error}</p>
-                                    <UIButton onClick={() => fetchData()} variant="outline" className="border-border">Retry Connection</UIButton>
-                                </div>
-                            </div>
-                        )}
-
-                        {((compareMode && diffData?.diff?.type === "kg_diff") || (selectedTimelineVersionId && timelineVersionDiff?.diff?.type === "kg_diff")) && compareViewMode === "diff" ? (
-                            <div className="absolute inset-0 overflow-auto p-4 bg-background z-10">
-                                <KgDiffDiagramView payload={(diffData?.diff ?? timelineVersionDiff?.diff)!} isLoading={false} />
-                            </div>
-                        ) : (
-                            <svg ref={svgRef} className="h-full w-full cursor-grab active:cursor-grabbing" />
-                        )}
-
-                        <div className="absolute bottom-6 left-6 z-20 flex flex-col gap-2">
-                            <div className="flex items-center gap-2 px-3 py-1.5 bg-background/80 backdrop-blur-md border border-border rounded-full shadow-lg">
-                                <Globe className="w-3.5 h-3.5 text-muted-foreground" />
-                                <span className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest">Knowledge Graph Mode</span>
-                            </div>
-                            {/* When embedded in Decisions tab: show that we're displaying diff for the selected decision */}
-                            {embeddedInDecisions && selectedTimelineVersionId && (
-                                <div className="px-3 py-2 bg-background/90 backdrop-blur-md border border-border rounded-lg shadow-lg text-[10px]">
-                                    <span className="font-bold text-muted-foreground uppercase tracking-wider block mb-1.5">Diff for selected decision</span>
-                                    {loadingTimelineDiff ? (
-                                        <span className="text-muted-foreground">Loading diff…</span>
-                                    ) : timelineVersionDiff?.summary ? (
-                                        <div className="flex flex-wrap gap-x-3 gap-y-0.5">
-                                            <span className="flex items-center gap-1"><span className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: KG_DIFF_COLORS.added }} /> Added {timelineVersionDiff.summary.added ?? 0}</span>
-                                            <span className="flex items-center gap-1"><span className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: KG_DIFF_COLORS.modified }} /> Modified {timelineVersionDiff.summary.modified ?? 0}</span>
-                                            <span className="flex items-center gap-1"><span className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: KG_DIFF_COLORS.removed }} /> Removed {timelineVersionDiff.summary.removed ?? 0}</span>
+                        {(() => {
+                            const graphContentWithCompare = (
+                                <>
+                                    {loading && !data && (
+                                        <div className="absolute inset-0 flex items-center justify-center bg-background z-30">
+                                            <div className="text-center">
+                                                <div className="h-8 w-8 border-2 border-primary border-t-transparent rounded-full animate-spin mx-auto mb-4" />
+                                                <p className="text-xs text-muted-foreground">Initializing Knowledge Graph...</p>
+                                            </div>
+                                        </div>
+                                    )}
+                                    {error && (
+                                        <div className="absolute inset-0 flex items-center justify-center bg-background z-30 p-6 text-center">
+                                            <div>
+                                                <p className="text-destructive mb-4 font-mono text-sm leading-relaxed max-w-md mx-auto">Error: {error}</p>
+                                                <UIButton onClick={() => fetchData()} variant="outline" className="border-border">Retry Connection</UIButton>
+                                            </div>
+                                        </div>
+                                    )}
+                                    {((compareMode && diffData?.diff?.type === "kg_diff") || (selectedTimelineVersionId && timelineVersionDiff?.diff?.type === "kg_diff")) && compareViewMode === "diff" ? (
+                                        <div className="absolute inset-0 overflow-auto p-4 bg-background z-10">
+                                            <KgDiffDiagramView payload={(diffData?.diff ?? timelineVersionDiff?.diff)!} isLoading={false} />
                                         </div>
                                     ) : (
-                                        <span className="text-muted-foreground">No diff summary</span>
+                                        <svg ref={svgRef} className="h-full w-full cursor-grab active:cursor-grabbing" />
                                     )}
-                                </div>
-                            )}
-                            {(diffData?.diff?.type === "kg_diff" || timelineVersionDiff?.diff?.type === "kg_diff") && (
-                                <div className="flex flex-col gap-2">
-                                    <div className="flex items-center gap-2 px-2">
-                                        <button
-                                            type="button"
-                                            className={cn(
-                                                "text-[10px] font-medium px-2 py-1 rounded",
-                                                compareViewMode === 'graph' ? "bg-primary text-primary-foreground" : "bg-muted text-muted-foreground hover:bg-muted/80"
-                                            )}
-                                            onClick={() => setCompareViewMode('graph')}
-                                        >
-                                            Graph
-                                        </button>
-                                        <button
-                                            type="button"
-                                            className={cn(
-                                                "text-[10px] font-medium px-2 py-1 rounded",
-                                                compareViewMode === 'diff' ? "bg-primary text-primary-foreground" : "bg-muted text-muted-foreground hover:bg-muted/80"
-                                            )}
-                                            onClick={() => setCompareViewMode('diff')}
-                                        >
-                                            Diff list
-                                        </button>
+                                    <div className="absolute bottom-6 left-6 z-20 flex flex-col gap-2">
+                                        <div className="flex items-center gap-2 px-3 py-1.5 bg-background/80 backdrop-blur-md border border-border rounded-full shadow-lg">
+                                            <Globe className="w-3.5 h-3.5 text-muted-foreground" />
+                                            <span className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest">Knowledge Graph Mode</span>
+                                        </div>
+                                        {embeddedInDecisions && selectedTimelineVersionId && (
+                                            <div className="px-3 py-2 bg-background/90 backdrop-blur-md border border-border rounded-lg shadow-lg text-[10px]">
+                                                <span className="font-bold text-muted-foreground uppercase tracking-wider block mb-1.5">Diff for selected decision</span>
+                                                {loadingTimelineDiff ? (
+                                                    <span className="text-muted-foreground">Loading diff…</span>
+                                                ) : timelineVersionDiff?.summary ? (
+                                                    <div className="flex flex-wrap gap-x-3 gap-y-0.5">
+                                                        <span className="flex items-center gap-1"><span className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: KG_DIFF_COLORS.added }} /> Added {timelineVersionDiff.summary.added ?? 0}</span>
+                                                        <span className="flex items-center gap-1"><span className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: KG_DIFF_COLORS.modified }} /> Modified {timelineVersionDiff.summary.modified ?? 0}</span>
+                                                        <span className="flex items-center gap-1"><span className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: KG_DIFF_COLORS.removed }} /> Removed {timelineVersionDiff.summary.removed ?? 0}</span>
+                                                    </div>
+                                                ) : (
+                                                    <span className="text-muted-foreground">No diff summary</span>
+                                                )}
+                                            </div>
+                                        )}
+                                        {(diffData?.diff?.type === "kg_diff" || timelineVersionDiff?.diff?.type === "kg_diff") && (
+                                            <div className="flex flex-col gap-2">
+                                                <div className="flex items-center gap-2 px-2">
+                                                    <button type="button" className={cn("text-[10px] font-medium px-2 py-1 rounded", compareViewMode === 'graph' ? "bg-primary text-primary-foreground" : "bg-muted text-muted-foreground hover:bg-muted/80")} onClick={() => setCompareViewMode('graph')}>Graph</button>
+                                                    <button type="button" className={cn("text-[10px] font-medium px-2 py-1 rounded", compareViewMode === 'diff' ? "bg-primary text-primary-foreground" : "bg-muted text-muted-foreground hover:bg-muted/80")} onClick={() => setCompareViewMode('diff')}>Diff list</button>
+                                                </div>
+                                                <div className="flex items-center gap-4 px-3 py-2 bg-background/90 backdrop-blur-md border border-border rounded-lg shadow-lg text-[10px] font-medium">
+                                                    <span className="text-muted-foreground uppercase tracking-wider">Diff:</span>
+                                                    <span className="flex items-center gap-1.5"><span className="w-2 h-2 rounded-full" style={{ backgroundColor: KG_DIFF_COLORS.added }} title="Added" />Added</span>
+                                                    <span className="flex items-center gap-1.5"><span className="w-2 h-2 rounded-full" style={{ backgroundColor: KG_DIFF_COLORS.modified }} title="Modified" />Modified</span>
+                                                    <span className="flex items-center gap-1.5"><span className="w-2 h-2 rounded-full" style={{ backgroundColor: KG_DIFF_COLORS.removed }} title="Removed" />Removed</span>
+                                                </div>
+                                            </div>
+                                        )}
                                     </div>
-                                    <div className="flex items-center gap-4 px-3 py-2 bg-background/90 backdrop-blur-md border border-border rounded-lg shadow-lg text-[10px] font-medium">
-                                        <span className="text-muted-foreground uppercase tracking-wider">Diff:</span>
-                                        <span className="flex items-center gap-1.5">
-                                            <span className="w-2 h-2 rounded-full" style={{ backgroundColor: KG_DIFF_COLORS.added }} title="Added" />
-                                            Added
-                                        </span>
-                                        <span className="flex items-center gap-1.5">
-                                            <span className="w-2 h-2 rounded-full" style={{ backgroundColor: KG_DIFF_COLORS.modified }} title="Modified" />
-                                            Modified
-                                        </span>
-                                        <span className="flex items-center gap-1.5">
-                                            <span className="w-2 h-2 rounded-full" style={{ backgroundColor: KG_DIFF_COLORS.removed }} title="Removed" />
-                                            Removed
-                                        </span>
-                                    </div>
-                                </div>
-                            )}
-                        </div>
-                    </>
-                )}
+                                </>
+                            );
+                            const descriptor = viewRegistry.get(viewMode || 'map');
+                            if (!descriptor) return viewMode === 'artifacts' ? <ArtifactsView /> : graphContentWithCompare;
+                            return descriptor.render({
+                                data: data as MapViewGraphData | null,
+                                loading,
+                                error,
+                                containerRef,
+                                scope: { orgId: orgIdFromRoute ?? undefined, projectId: scopeProjectId ?? undefined, threadId: threadId ?? undefined, phaseId: scopeProjectId ?? undefined },
+                                initialGraphForSimulate: viewMode === 'simulate' ? (data as MapViewGraphData | null) : null,
+                                graphContent: viewMode === 'map' ? graphContentWithCompare : undefined,
+                                artifactsContent: viewMode === 'artifacts' ? <ArtifactsView /> : undefined,
+                            });
+                        })()}
 
                         {/* Floating Controls - only when bottom panel is collapsed */}
                         {bottomPanelCollapsed && (
@@ -2057,38 +2040,47 @@ export function WorldMapView({ embeddedInDecisions = false, decisionsWithVersion
                 </div>
             ) : (
                 <div ref={containerRef} className="flex-1 min-h-0 flex flex-col relative overflow-hidden" onClick={() => { setSelectedNode(null); setFocusedNodeId(null); }}>
-                    {viewMode === 'artifacts' ? (
-                        <ArtifactsView />
-                    ) : (
-                        <>
-                            {loading && !data && (
-                                <div className="absolute inset-0 flex items-center justify-center bg-background z-30">
-                                    <div className="text-center">
-                                        <div className="h-8 w-8 border-2 border-primary border-t-transparent rounded-full animate-spin mx-auto mb-4" />
-                                        <p className="text-xs text-muted-foreground">Initializing Knowledge Graph...</p>
+                    {(() => {
+                        const graphContentSimple = (
+                            <>
+                                {loading && !data && (
+                                    <div className="absolute inset-0 flex items-center justify-center bg-background z-30">
+                                        <div className="text-center">
+                                            <div className="h-8 w-8 border-2 border-primary border-t-transparent rounded-full animate-spin mx-auto mb-4" />
+                                            <p className="text-xs text-muted-foreground">Initializing Knowledge Graph...</p>
+                                        </div>
+                                    </div>
+                                )}
+                                {error && (
+                                    <div className="absolute inset-0 flex items-center justify-center bg-background z-30 p-6 text-center">
+                                        <div>
+                                            <p className="text-destructive mb-4 font-mono text-sm leading-relaxed max-w-md mx-auto">Error: {error}</p>
+                                            <UIButton onClick={() => fetchData()} variant="outline" className="border-border">Retry Connection</UIButton>
+                                        </div>
+                                    </div>
+                                )}
+                                <svg ref={svgRef} className="h-full w-full cursor-grab active:cursor-grabbing" />
+                                <div className="absolute bottom-6 left-6 z-20">
+                                    <div className="flex items-center gap-2 px-3 py-1.5 bg-background/80 backdrop-blur-md border border-border rounded-full shadow-lg">
+                                        <Globe className="w-3.5 h-3.5 text-muted-foreground" />
+                                        <span className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest">Knowledge Graph Mode</span>
                                     </div>
                                 </div>
-                            )}
-
-                            {error && (
-                                <div className="absolute inset-0 flex items-center justify-center bg-background z-30 p-6 text-center">
-                                    <div>
-                                        <p className="text-destructive mb-4 font-mono text-sm leading-relaxed max-w-md mx-auto">Error: {error}</p>
-                                        <UIButton onClick={() => fetchData()} variant="outline" className="border-border">Retry Connection</UIButton>
-                                    </div>
-                                </div>
-                            )}
-
-                            <svg ref={svgRef} className="h-full w-full cursor-grab active:cursor-grabbing" />
-
-                            <div className="absolute bottom-6 left-6 z-20">
-                                <div className="flex items-center gap-2 px-3 py-1.5 bg-background/80 backdrop-blur-md border border-border rounded-full shadow-lg">
-                                    <Globe className="w-3.5 h-3.5 text-muted-foreground" />
-                                    <span className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest">Knowledge Graph Mode</span>
-                                </div>
-                            </div>
-                        </>
-                    )}
+                            </>
+                        );
+                        const descriptor = viewRegistry.get(viewMode || 'map');
+                        if (!descriptor) return viewMode === 'artifacts' ? <ArtifactsView /> : graphContentSimple;
+                        return descriptor.render({
+                            data: data as MapViewGraphData | null,
+                            loading,
+                            error,
+                            containerRef,
+                            scope: { orgId: orgIdFromRoute ?? undefined, projectId: scopeProjectId ?? undefined, threadId: threadId ?? undefined, phaseId: scopeProjectId ?? undefined },
+                            initialGraphForSimulate: viewMode === 'simulate' ? (data as MapViewGraphData | null) : null,
+                            graphContent: viewMode === 'map' ? graphContentSimple : undefined,
+                            artifactsContent: viewMode === 'artifacts' ? <ArtifactsView /> : undefined,
+                        });
+                    })()}
 
                     {/* Floating Controls - only when bottom panel is collapsed */}
                     {bottomPanelCollapsed && (
@@ -2107,8 +2099,8 @@ export function WorldMapView({ embeddedInDecisions = false, decisionsWithVersion
                 </div>
             )}
 
-            {/* Map controls: only show when not embedded in Decisions tab */}
-            {!embeddedInDecisions && (
+            {/* Map controls: only show when not embedded in Decisions tab and not in simulate view */}
+            {!embeddedInDecisions && viewMode !== 'simulate' && (
             <div className={cn("border-t border-border bg-muted/30 z-20 shrink-0 flex flex-col", bottomPanelCollapsed ? "h-9" : "min-h-[52px]")}>
                 {bottomPanelCollapsed ? (
                     <button

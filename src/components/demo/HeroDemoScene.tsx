@@ -100,7 +100,21 @@ function assignClusters(
 
 const TRANSITION_MS = 900;
 
-export function HeroDemoScene() {
+/** Compatible graph shape from map (WorldMapView) or API. */
+export type HeroDemoSceneGraphData = GraphData;
+
+export interface HeroDemoSceneProps {
+    /** When set, use this graph and skip fetch (e.g. from map view). Same shape as API / map GraphData. */
+    initialGraph?: HeroDemoSceneGraphData | null;
+    /** When set, fetch project-scoped KG (same as map) instead of base NPD. Requires auth. */
+    phaseId?: string | null;
+    threadId?: string | null;
+    projectId?: string | null;
+    orgId?: string | null;
+}
+
+export function HeroDemoScene(props: HeroDemoSceneProps = {}) {
+    const { initialGraph, phaseId, threadId = "default", projectId, orgId } = props;
     const containerRef = useRef<HTMLDivElement>(null);
     const svgRef = useRef<SVGSVGElement>(null);
     const [graph, setGraph] = useState<GraphData | null>(null);
@@ -112,10 +126,52 @@ export function HeroDemoScene() {
     const lastPositionsRef = useRef<Map<string, { x: number; y: number }>>(new Map());
     const graphIdRef = useRef<string | null>(null);
 
-    // Fetch base KG or use synthetic
+    // When initialGraph is provided (e.g. from map view), use it and skip fetch
     useEffect(() => {
+        if (initialGraph?.nodes?.length) {
+            const data = initialGraph;
+            const nodes = data.nodes.map((n) => ({
+                id: n.id,
+                type: n.type || "ARTIFACT",
+                name: n.name ?? (n as { label?: string }).label ?? n.id,
+            }));
+            const links = (data.links || []).map((l) => ({
+                source: typeof l.source === "object" && l.source && "id" in l.source ? (l.source as { id: string }).id : String(l.source),
+                target: typeof l.target === "object" && l.target && "id" in l.target ? (l.target as { id: string }).id : String(l.target),
+                type: l.type,
+            }));
+            const phase_grouping = data.metadata?.phase_grouping ?? [];
+            assignClusters(nodes, phase_grouping);
+            setDataSource("kg");
+            setGraph({
+                nodes,
+                links: links as DemoLink[],
+                metadata: { ...data.metadata, phase_grouping },
+            });
+            return;
+        }
+        if (initialGraph !== undefined && initialGraph !== null && !initialGraph?.nodes?.length) {
+            setDataSource("synthetic");
+            const fallback = buildSyntheticGraph();
+            assignClusters(fallback.nodes, fallback.metadata.phase_grouping ?? []);
+            setGraph(fallback);
+        }
+    }, [initialGraph]);
+
+    // Fetch base KG, or project KG when phaseId is set — only when no valid initialGraph
+    useEffect(() => {
+        if (initialGraph?.nodes?.length) return;
         let cancelled = false;
-        fetch("/api/demo/kg")
+        const params = new URLSearchParams();
+        if (phaseId) {
+            params.set("phase_id", phaseId);
+            params.set("thread_id", threadId ?? "default");
+            if (projectId) params.set("project_id", projectId);
+            if (orgId) params.set("org_id", orgId);
+        }
+        const url = params.toString() ? `/api/demo/kg?${params.toString()}` : "/api/demo/kg";
+        const init: RequestInit = phaseId ? { credentials: "include" } : {};
+        fetch(url, init)
             .then((r) => (r.ok ? r.json() : Promise.reject(new Error("fetch failed"))))
             .then((data: GraphData) => {
                 if (cancelled) return;
@@ -156,7 +212,7 @@ export function HeroDemoScene() {
         return () => {
             cancelled = true;
         };
-    }, []);
+    }, [phaseId, threadId, projectId, orgId, initialGraph?.nodes?.length]);
 
     // Beat auto-advance when playing
     useEffect(() => {
