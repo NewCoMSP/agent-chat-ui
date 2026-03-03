@@ -47,10 +47,17 @@ export type StateType = {
   context?: Record<string, unknown>;
   /** Active workflow phase (from backend); e.g. supervisor, project_configurator, concept, requirements, architecture, design, administration */
   active_agent?: string;
+  /** Synced from backend; preferred over active_agent when present. */
+  active_mode?: string;
   visualization_html?: string;
   workbench_view?: "map" | "workflow" | "artifacts" | "discovery" | "settings";
   /** Filtered KG for current trigger; set by Project Configurator, streamed to client. Use for map view without extra /api/kg-data. */
   filtered_kg?: FilteredKgType;
+  /** Context path/current/mode from get_kg_context_for_turn (RunStarted + stream state). See docs/CONTEXT_AS_REPO_AND_PATH.md. */
+  context_path_decision_ids?: string[];
+  context_current_decision_id?: string;
+  context_mode?: string;
+  kg_version_sha?: string;
 };
 
 const useTypedStream = useStream<

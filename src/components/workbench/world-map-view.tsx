@@ -213,10 +213,20 @@ export interface WorldMapViewProps {
     embeddedInDecisions?: boolean;
     /** When provided (e.g. from decisions panel), merge kg_version_sha/proposed_kg_version_sha so map shows "Decision" badge for single-commit-applied decisions. */
     decisionsWithVersionSha?: { id: string; kg_version_sha?: string; proposed_kg_version_sha?: string }[];
+    /** Context path/current/mode from stream or parent. When not provided, read from stream.values. */
+    pathDecisionIds?: string[];
+    currentDecisionId?: string;
+    kgVersionSha?: string;
+    contextMode?: string;
 }
 
-export function WorldMapView({ embeddedInDecisions = false, decisionsWithVersionSha }: WorldMapViewProps = {}) {
+export function WorldMapView({ embeddedInDecisions = false, decisionsWithVersionSha, pathDecisionIds: pathDecisionIdsProp, currentDecisionId: currentDecisionIdProp, kgVersionSha: kgVersionShaProp, contextMode: contextModeProp }: WorldMapViewProps = {}) {
     const stream = useStreamContext();
+    const streamValues = (stream as { values?: { context_path_decision_ids?: string[]; context_current_decision_id?: string; kg_version_sha?: string; context_mode?: string } })?.values;
+    const pathDecisionIds = pathDecisionIdsProp ?? streamValues?.context_path_decision_ids;
+    const currentDecisionId = currentDecisionIdProp ?? streamValues?.context_current_decision_id;
+    const kgVersionSha = kgVersionShaProp ?? streamValues?.kg_version_sha;
+    const contextMode = contextModeProp ?? streamValues?.context_mode;
     const [viewMode, setViewMode] = useQueryState("view", { defaultValue: "map" });
     /** When viewMode === 'simulate', beat (0..7) drives visualization: beat 0 = no edges. */
     const [simulateBeat, setSimulateBeat] = useState(0);
@@ -224,7 +234,7 @@ export function WorldMapView({ embeddedInDecisions = false, decisionsWithVersion
     const simulateBeatRef = useRef(0);
     simulateBeatRef.current = simulateBeat;
     const [compareParam] = useQueryState("compare"); // When "1" or "true", open timeline (header "Compare on map")
-    const [versionParam] = useQueryState("version"); // Select this decision version in timeline and show its diff (per-decision "Compare on map")
+    const [versionParam, setVersionParam] = useQueryState("version"); // Select this decision version in timeline and show its diff (per-decision "Compare on map")
     /** Filtered KG streamed from backend when Project Configurator runs; use for map without extra /api/kg-data. */
     const filteredKg = (stream as any)?.values?.filtered_kg as { nodes: any[]; links: any[]; metadata?: any } | undefined;
 
@@ -234,7 +244,9 @@ export function WorldMapView({ embeddedInDecisions = false, decisionsWithVersion
     const [data, setData] = useState<GraphData | null>(null);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
-    const [selectedNode, setSelectedNode] = useState<Node | null>(null);
+    const [selectedNodes, setSelectedNodes] = useState<Node[]>([]);
+    const selectedNode = selectedNodes.length > 0 ? selectedNodes[selectedNodes.length - 1]! : null;
+    const selectedNodeIds = useMemo(() => new Set(selectedNodes.map((n) => n.id)), [selectedNodes]);
     const [threadIdFromUrl] = useQueryState("threadId");
     const threadId = (stream as any)?.threadId ?? threadIdFromUrl ?? undefined;
     const { projectId: projectIdFromRoute, orgId: orgIdFromRoute } = useRouteScope();
@@ -259,10 +271,10 @@ export function WorldMapView({ embeddedInDecisions = false, decisionsWithVersion
     useEffect(() => {
         if (viewMode === 'simulate') setSimulateBeat(0);
     }, [viewMode]);
-    // When version= in URL (per-decision "Compare on map"), open timeline, select that version, show its diff
+    // When version= in URL (per-decision "Compare on map" or timeline selection), open timeline, select that version, show its diff. No threadId required.
     const lastUrlVersion = useRef<string | null>(null);
     useEffect(() => {
-        if (!versionParam || !threadId) return;
+        if (!versionParam) return;
         if (!kgHistory?.versions?.length) {
             console.log('[WorldMapView] Timeline diff: version= in URL but no kgHistory yet, fetching history');
             fetchKgHistory();
@@ -273,7 +285,6 @@ export function WorldMapView({ embeddedInDecisions = false, decisionsWithVersion
         const versionBefore = idx >= 0 && idx < versions.length - 1 ? versions[idx + 1]?.id : undefined;
         console.log('[WorldMapView] Timeline diff: version= in URL', {
             versionParam,
-            threadId,
             versionsCount: versions.length,
             idx,
             versionBefore: versionBefore ?? null,
@@ -400,6 +411,18 @@ export function WorldMapView({ embeddedInDecisions = false, decisionsWithVersion
             });
         }
     }, [selectedTimelineVersionId, timelineVersionDiff, loadingTimelineDiff]);
+
+    // Sync timeline selection from stream context (kg_version_sha = "current" context for this conversation)
+    useEffect(() => {
+        if (!kgVersionSha || !kgHistory?.versions?.length) return;
+        const versions = kgHistory.versions as { id?: string }[];
+        const hasVersion = versions.some((v) => v.id === kgVersionSha);
+        if (hasVersion) {
+            setSelectedTimelineVersionId(kgVersionSha);
+            setActiveVersion(kgVersionSha);
+            fetchDiffForTimelineVersion(kgVersionSha);
+        }
+    }, [kgVersionSha, kgHistory?.versions?.length]);
 
     // When decisions panel passes SHAs (e.g. after apply), merge into kgDecisions so "Decision" badge and diff work
     useEffect(() => {
@@ -636,6 +659,8 @@ export function WorldMapView({ embeddedInDecisions = false, decisionsWithVersion
             if (versionSource === 'organization') params.set('version_source', 'organization');
             if (scopeProjectId) params.set('project_id', scopeProjectId);
             if (scopeOrgId) params.set('org_id', scopeOrgId);
+            // When at org level (no project), backend needs version_source=organization so it uses org_id as phase_id
+            if (scopeOrgId && !scopeProjectId) params.set('version_source', 'organization');
             const url = `/api/kg-data?${params.toString()}`;
 
             console.log('[WorldMapView] Fetching data:', { url, preserveDiff, version, versionSource });
@@ -1064,8 +1089,20 @@ export function WorldMapView({ embeddedInDecisions = false, decisionsWithVersion
             for (const l of resolvedLinks) {
                 const src = typeof l.source === 'string' ? l.source : (l.source as Node)?.id;
                 const tgt = typeof l.target === 'string' ? l.target : (l.target as Node)?.id;
-                const linkType = (l.type ?? '').toString().trim();
-                if (linkType === 'REFERENCES' && src === focusedNodeId && tgt) inFocusNodeIds.add(tgt);
+                const typ = (l.type ?? '').toString().trim().toUpperCase();
+                if (typ === 'REFERENCES' && src === focusedNodeId && tgt) inFocusNodeIds.add(tgt);
+            }
+        }
+        // Multi-select: selected nodes + their REFERENCES neighbours (constellation for each selected).
+        const inSelectedOrNeighbourIds = new Set<string>(selectedNodeIds);
+        if (selectedNodeIds.size > 0) {
+            for (const l of resolvedLinks) {
+                const src = typeof l.source === 'string' ? l.source : (l.source as Node)?.id;
+                const tgt = typeof l.target === 'string' ? l.target : (l.target as Node)?.id;
+                const typ = (l.type ?? '').toString().trim().toUpperCase();
+                if (typ !== 'REFERENCES') continue;
+                if (src && selectedNodeIds.has(src)) inSelectedOrNeighbourIds.add(tgt);
+                if (tgt && selectedNodeIds.has(tgt)) inSelectedOrNeighbourIds.add(src);
             }
         }
 
@@ -1132,8 +1169,8 @@ export function WorldMapView({ embeddedInDecisions = false, decisionsWithVersion
             ? visibleByType.filter((n) => matchesSearch(n, query))
             : visibleByType;
 
-        if (searchMatches.length === 1 && searchMatches[0].id !== selectedNode?.id) {
-            setSelectedNode(searchMatches[0]);
+        if (searchMatches.length === 1 && !selectedNodeIds.has(searchMatches[0].id)) {
+            setSelectedNodes([searchMatches[0]]);
         }
 
         const effectiveNodeIds =
@@ -1151,9 +1188,10 @@ export function WorldMapView({ embeddedInDecisions = false, decisionsWithVersion
         const centerX = width / 2;
         const centerY = height / 2;
         const phaseRadius = Math.min(width, height) * 0.32;
+        const linkTypeNorm = (t: string | undefined) => (t ?? '').toString().trim().toUpperCase();
         const artNodeIdsByTemplateId: Record<string, string[]> = {};
         for (const l of data?.links ?? []) {
-            const typ = (l.type ?? '').toString().trim();
+            const typ = linkTypeNorm(l.type);
             if (typ !== 'CONTRIBUTES_TO') continue;
             const src = typeof l.source === 'string' ? l.source : (l.source as Node)?.id;
             const tgt = typeof l.target === 'string' ? l.target : (l.target as Node)?.id;
@@ -1181,7 +1219,7 @@ export function WorldMapView({ embeddedInDecisions = false, decisionsWithVersion
         const nodeIdToOwnerArtId: Record<string, string> = {};
         const artIdsSet = new Set(Object.keys(artIdToAgentId));
         for (const l of effectiveValidLinks) {
-            const typ = (l.type ?? '').toString().trim();
+            const typ = linkTypeNorm(l.type);
             if (typ !== 'REFERENCES') continue;
             const src = typeof l.source === 'string' ? l.source : (l.source as Node)?.id;
             const tgt = typeof l.target === 'string' ? l.target : (l.target as Node)?.id;
@@ -1245,22 +1283,67 @@ export function WorldMapView({ embeddedInDecisions = false, decisionsWithVersion
             }
         });
         if (useConstellationLayout) {
-            effectiveNodes.forEach((n) => {
-                const pos = artPositionByNodeId[n.id];
-                if (pos) {
-                    n.fx = pos.x;
-                    n.fy = pos.y;
-                } else {
+            if (useLinearLayout) {
+                // Beat 3: preserve each constellation shape (artifact + nearest neighbours), translate whole cluster into linear position.
+                const constellationByArtId: Record<string, Set<string>> = {};
+                artIdsSet.forEach((artId) => {
+                    constellationByArtId[artId] = new Set([artId]);
+                });
+                effectiveNodes.forEach((n) => {
                     const ownerArtId = nodeIdToOwnerArtId[n.id];
-                    const target = ownerArtId ? artPositionByNodeId[ownerArtId] : phaseCenterByAgent[getAgentIdForNode(n)];
-                    if (target) {
-                        n.x = target.x + (Math.random() - 0.5) * 40;
-                        n.y = target.y + (Math.random() - 0.5) * 40;
+                    if (ownerArtId && constellationByArtId[ownerArtId]) {
+                        constellationByArtId[ownerArtId].add(n.id);
                     }
-                    n.fx = null;
-                    n.fy = null;
-                }
-            });
+                });
+                const constellationTranslation: Record<string, { dx: number; dy: number }> = {};
+                Object.entries(constellationByArtId).forEach(([artId, ids]) => {
+                    const target = artPositionByNodeId[artId];
+                    if (!target) return;
+                    const artNode = effectiveNodes.find((m) => m.id === artId);
+                    const artX = artNode?.x ?? centerX;
+                    const artY = artNode?.y ?? centerY;
+                    constellationTranslation[artId] = { dx: target.x - artX, dy: target.y - artY };
+                });
+                const nodeIdToConstellationArtId: Record<string, string> = {};
+                Object.entries(constellationByArtId).forEach(([artId, ids]) => {
+                    ids.forEach((id) => {
+                        nodeIdToConstellationArtId[id] = artId;
+                    });
+                });
+                effectiveNodes.forEach((n) => {
+                    const artId = nodeIdToConstellationArtId[n.id];
+                    const trans = artId ? constellationTranslation[artId] : undefined;
+                    if (trans) {
+                        n.fx = (n.x ?? centerX) + trans.dx;
+                        n.fy = (n.y ?? centerY) + trans.dy;
+                    } else {
+                        const agentId = getAgentIdForNode(n);
+                        const phaseCenter = phaseCenterByAgent[agentId] ?? { x: centerX, y: centerY };
+                        n.fx = (n.x ?? centerX) + (phaseCenter.x - centerX);
+                        n.fy = (n.y ?? centerY) + (phaseCenter.y - centerY);
+                    }
+                    // D3 does not update x,y for fixed nodes; set them so first paint and tick use linear position
+                    n.x = n.fx ?? n.x;
+                    n.y = n.fy ?? n.y;
+                });
+            } else {
+                effectiveNodes.forEach((n) => {
+                    const pos = artPositionByNodeId[n.id];
+                    if (pos) {
+                        n.fx = pos.x;
+                        n.fy = pos.y;
+                    } else {
+                        const ownerArtId = nodeIdToOwnerArtId[n.id];
+                        const target = ownerArtId ? artPositionByNodeId[ownerArtId] : phaseCenterByAgent[getAgentIdForNode(n)];
+                        if (target) {
+                            n.x = target.x + (Math.random() - 0.5) * 40;
+                            n.y = target.y + (Math.random() - 0.5) * 40;
+                        }
+                        n.fx = null;
+                        n.fy = null;
+                    }
+                });
+            }
         } else {
             effectiveNodes.forEach((n) => {
                 n.fx = null;
@@ -1318,7 +1401,13 @@ export function WorldMapView({ embeddedInDecisions = false, decisionsWithVersion
             .style('filter', 'none')
             .on('click', (event, d) => {
                 setFocusedNodeId(d.id);
-                setSelectedNode(d);
+                if (event.ctrlKey || event.metaKey) {
+                    setSelectedNodes((prev) =>
+                        prev.some((n) => n.id === d.id) ? prev.filter((n) => n.id !== d.id) : [...prev, d]
+                    );
+                } else {
+                    setSelectedNodes([d]);
+                }
                 event.stopPropagation();
             })
             .call(d3.drag<SVGGElement, Node>()
@@ -1341,7 +1430,7 @@ export function WorldMapView({ embeddedInDecisions = false, decisionsWithVersion
         node.append('circle')
             .attr('class', 'selection-glow')
             .attr('r', d => {
-                if (selectedNode && d.id === selectedNode.id) return 24;
+                if (selectedNodeIds.has(d.id)) return 24;
                 return 0;
             })
             .attr('fill', 'none')
@@ -1350,7 +1439,7 @@ export function WorldMapView({ embeddedInDecisions = false, decisionsWithVersion
             .attr('opacity', 0.6)
             .style('pointer-events', 'none')
             .style('filter', 'drop-shadow(0 0 8px #3b82f6)')
-            .style('animation', d => selectedNode && d.id === selectedNode.id ? 'node-pulse 2s ease-in-out infinite' : 'none');
+            .style('animation', d => selectedNodeIds.has(d.id) ? 'node-pulse 2s ease-in-out infinite' : 'none');
 
         // When statusFilter === 'all', style pending/rejected by metadata.status (decision lineage)
         const nodeKgStatus = (d: Node) => (d.metadata?.status ?? 'active') as string;
@@ -1358,11 +1447,11 @@ export function WorldMapView({ embeddedInDecisions = false, decisionsWithVersion
 
         node.append('circle')
             .attr('r', d => {
-                if (selectedNode && d.id === selectedNode.id) return 20;
+                if (selectedNodeIds.has(d.id)) return 20;
                 return d.id === data.metadata.active_trigger ? 18 : 12;
             })
             .attr('fill', d => {
-                if (selectedNode && d.id === selectedNode.id) return '#3b82f6';
+                if (selectedNodeIds.has(d.id)) return '#3b82f6';
                 if (isPendingOrRejected(d)) {
                     return nodeKgStatus(d) === 'pending' ? '#fef3c7' : '#fecaca'; // amber-100 / red-200
                 }
@@ -1380,7 +1469,7 @@ export function WorldMapView({ embeddedInDecisions = false, decisionsWithVersion
                 return d.id === data.metadata.active_trigger ? '#fff' : '#000';
             })
             .attr('stroke-width', d => {
-                if (selectedNode && d.id === selectedNode.id) return 4;
+                if (selectedNodeIds.has(d.id)) return 4;
                 if (isPendingOrRejected(d)) return 2;
                 const status = (d as any).diff_status ?? (d as any).changeType;
                 if (status) return 2;
@@ -1388,7 +1477,7 @@ export function WorldMapView({ embeddedInDecisions = false, decisionsWithVersion
             })
             .attr('stroke-dasharray', d => (isPendingOrRejected(d) ? '4,2' : null))
             .style('filter', d => {
-                if (selectedNode && d.id === selectedNode.id) return 'drop-shadow(0 0 12px #3b82f6)';
+                if (selectedNodeIds.has(d.id)) return 'drop-shadow(0 0 12px #3b82f6)';
                 const status = (d as any).diff_status ?? (d as any).changeType;
                 if (status && KG_DIFF_COLORS[status as keyof typeof KG_DIFF_COLORS]) return `drop-shadow(0 0 6px ${KG_DIFF_COLORS[status as keyof typeof KG_DIFF_COLORS]})`;
                 return d.id === data.metadata.active_trigger ? 'drop-shadow(0 0 8px #fbbf24)' : 'none';
@@ -1416,7 +1505,7 @@ export function WorldMapView({ embeddedInDecisions = false, decisionsWithVersion
             .style('pointer-events', 'none');
 
         simulation.on('tick', () => {
-            const linkType = (d: Link) => (d.type ?? '').toString().trim();
+            const linkType = (d: Link) => linkTypeNorm((d.type ?? '').toString().trim());
             const isContentTraceLink = (d: Link) => CONTENT_TRACE_LINK_TYPES.has(linkType(d));
             const isReferencesFromFocus = (d: Link) => linkType(d) === 'REFERENCES' && (typeof d.source === 'string' ? d.source : (d.source as Node)?.id) === focusedNodeId;
             const sourceId = (d: Link) => typeof d.source === 'string' ? d.source : (d.source as Node)?.id;
@@ -1424,9 +1513,9 @@ export function WorldMapView({ embeddedInDecisions = false, decisionsWithVersion
             const linkTouchesFocus = (d: Link) => inFocusNodeIds.has(sourceId(d)) || inFocusNodeIds.has(targetId(d));
             const linkHighlighted = (d: Link) => focusedNodeId && linkTouchesFocus(d) && (isContentTraceLink(d) || isReferencesFromFocus(d));
 
-            // Update phase hulls: Beat 1/2 = per-template (artifact constellations); else per-agent
+            // Update phase hulls: Beat 1/2 = per-template (artifact constellations) when we have ART→template data; else per-agent
             const beat = viewMode === 'simulate' ? simulateBeatRef.current : -1;
-            const useTemplateHulls = viewMode === 'simulate' && (beat === 1 || beat === 2);
+            const useTemplateHulls = viewMode === 'simulate' && (beat === 1 || beat === 2) && Object.keys(templateIdToNodeIds).length > 0;
             const hullData = useTemplateHulls
                 ? Object.entries(templateIdToNodeIds).map(([tplId, nodeIdSet]) => {
                     const points = effectiveNodes
@@ -1467,41 +1556,63 @@ export function WorldMapView({ embeddedInDecisions = false, decisionsWithVersion
                 .style('opacity', d => {
                     // Step 1: Simulate beat 0 = no edges (chaos — no connection)
                     if (viewMode === 'simulate' && simulateBeatRef.current === 0) return 0;
-                    // Beat 2/3: only REFERENCES from artifact to its contained node types (same hierarchy as context pane)
+                    // Beat 2/3: only each artifact's edges to nearest neighbour (ART→contained type) → series of disconnected constellations
                     if (viewMode === 'simulate' && (simulateBeatRef.current === 1 || simulateBeatRef.current === 2)) {
                         if (linkType(d) !== 'REFERENCES') return 0;
                         const srcId = sourceId(d);
                         const tgtId = targetId(d);
-                        if (!artIdsSet.has(srcId)) return 0;
-                        const tplId = artIdToTemplateId[srcId];
-                        const allowedTypes = tplId ? templateIdToTypes[tplId] : null;
-                        const tgtNode = effectiveNodes.find((n) => n.id === tgtId);
-                        if (!allowedTypes || !tgtNode || !allowedTypes.has(tgtNode.type)) return 0;
-                        return 0.6;
+                        if (artIdsSet.size > 0) {
+                            if (!artIdsSet.has(srcId)) return 0;
+                            const tplId = artIdToTemplateId[srcId];
+                            const allowedTypes = tplId ? templateIdToTypes[tplId] : null;
+                            const tgtNode = effectiveNodes.find((n) => n.id === tgtId);
+                            if (!allowedTypes || !tgtNode || !allowedTypes.has(tgtNode.type)) return 0;
+                        }
+                        return 1;
                     }
                     if (focusedNodeId) {
                         if (linkHighlighted(d)) return 1;
                         return 0.2;
                     }
-                    if (selectedNode) {
-                        if (sourceId(d) === selectedNode.id || targetId(d) === selectedNode.id) return 1;
+                    if (selectedNodeIds.size > 0) {
+                        if (selectedNodeIds.has(sourceId(d)) || selectedNodeIds.has(targetId(d))) return 1;
                     }
                     return 0.5;
                 })
                 .style('stroke-width', d => {
+                    const simBeat = viewMode === 'simulate' ? simulateBeatRef.current : -1;
+                    if (viewMode === 'simulate' && (simBeat === 1 || simBeat === 2) && linkType(d) === 'REFERENCES') {
+                        if (artIdsSet.size === 0) return 2.5;
+                        if (artIdsSet.has(sourceId(d))) {
+                            const tplId = artIdToTemplateId[sourceId(d)];
+                            const allowedTypes = tplId ? templateIdToTypes[tplId] : null;
+                            const tgtNode = effectiveNodes.find((n) => n.id === targetId(d));
+                            if (allowedTypes && tgtNode && allowedTypes.has(tgtNode.type)) return 2.5;
+                        }
+                    }
                     if (focusedNodeId) {
                         if (linkHighlighted(d)) return 2.5;
                         return 1;
                     }
-                    if (selectedNode && (sourceId(d) === selectedNode.id || targetId(d) === selectedNode.id)) return 2.5;
+                    if (selectedNodeIds.size > 0 && (selectedNodeIds.has(sourceId(d)) || selectedNodeIds.has(targetId(d)))) return 2.5;
                     return 1.5;
                 })
                 .style('stroke', d => {
+                    const simBeat = viewMode === 'simulate' ? simulateBeatRef.current : -1;
+                    if (viewMode === 'simulate' && (simBeat === 1 || simBeat === 2) && linkType(d) === 'REFERENCES') {
+                        if (artIdsSet.size === 0) return '#3b82f6';
+                        if (artIdsSet.has(sourceId(d))) {
+                            const tplId = artIdToTemplateId[sourceId(d)];
+                            const allowedTypes = tplId ? templateIdToTypes[tplId] : null;
+                            const tgtNode = effectiveNodes.find((n) => n.id === targetId(d));
+                            if (allowedTypes && tgtNode && allowedTypes.has(tgtNode.type)) return '#3b82f6';
+                        }
+                    }
                     if (focusedNodeId) {
                         if (linkHighlighted(d)) return '#3b82f6';
                         return '#888';
                     }
-                    if (selectedNode && (sourceId(d) === selectedNode.id || targetId(d) === selectedNode.id)) return '#3b82f6';
+                    if (selectedNodeIds.size > 0 && (selectedNodeIds.has(sourceId(d)) || selectedNodeIds.has(targetId(d)))) return '#3b82f6';
                     if (linkIsPendingOrRejected(d)) return linkKgStatus(d) === 'pending' ? '#f59e0b' : '#ef4444';
                     return '#888';
                 });
@@ -1510,14 +1621,14 @@ export function WorldMapView({ embeddedInDecisions = false, decisionsWithVersion
                 .attr('transform', d => `translate(${d.x},${d.y})`)
                 .style('opacity', d => {
                     if (focusedNodeId) return inFocusNodeIds.has(d.id) ? 1 : 0.35;
-                    if (selectedNode && d.id !== selectedNode.id) return 0.4;
+                    if (selectedNodeIds.size > 0) return inSelectedOrNeighbourIds.has(d.id) ? 1 : 0.4;
                     return 1;
                 });
             
             // Update selection glow position
             node.select('.selection-glow')
                 .attr('r', d => {
-                    if (selectedNode && d.id === selectedNode.id) return 24;
+                    if (selectedNodeIds.has(d.id)) return 24;
                     return 0;
                 });
         });
@@ -1551,7 +1662,7 @@ export function WorldMapView({ embeddedInDecisions = false, decisionsWithVersion
                 }
             }
         };
-    }, [data, viewMode, diffData, selectedTimelineVersionId, timelineVersionDiff, selectedNode, focusedNodeId, compareViewMode, mapSearchQuery, typeFilter, statusFilter, viewMode === 'simulate' && simulateBeat >= 2 ? simulateBeat : 0]);
+    }, [data, viewMode, diffData, selectedTimelineVersionId, timelineVersionDiff, selectedNodes, focusedNodeId, compareViewMode, mapSearchQuery, typeFilter, statusFilter, viewMode === 'simulate' && simulateBeat >= 2 ? simulateBeat : 0]);
 
     // Center map on selected node when it changes
     useEffect(() => {
@@ -1613,9 +1724,16 @@ export function WorldMapView({ embeddedInDecisions = false, decisionsWithVersion
     );
 
     // Artifacts View Component: KG artifacts (accepted) + pending proposals (draft) — exclude drafts that were applied.
-    // Dedupe by metadata.artifact_id so the same document does not appear twice (e.g. base + enriched node for same file).
+    // Apply the same status filter (Active / All / Pending / Rejected) as the map so the list matches the filter.
     const ArtifactsView = () => {
-        const kgArtifacts = data?.nodes.filter(n => n.type === 'ARTIFACT') || [];
+        const nodeStatus = (n: Node) => (n.metadata?.status ?? 'active') as string;
+        const matchStatus = (n: Node) =>
+            statusFilter === 'all'
+                ? true
+                : statusFilter === 'active'
+                    ? [undefined, 'active', 'accepted'].includes(nodeStatus(n) as any)
+                    : nodeStatus(n) === statusFilter;
+        const kgArtifacts = (data?.nodes.filter(n => n.type === 'ARTIFACT') || []).filter(matchStatus);
         const enrichedKg = kgArtifacts.map(artifact => {
             const fullNode = data?.nodes.find(n => n.id === artifact.id);
             return {
@@ -1632,13 +1750,15 @@ export function WorldMapView({ embeddedInDecisions = false, decisionsWithVersion
             }
             return true;
         });
-        const artifacts = [...draftsToShow, ...dedupedKg];
+        // Include draft (pending) artifacts only when status filter is Pending or All
+        const draftsFiltered = (statusFilter === 'pending' || statusFilter === 'all') ? draftsToShow : [];
+        const artifacts = [...draftsFiltered, ...dedupedKg];
 
         return (
             <ArtifactsListView
                 artifacts={artifacts}
                 threadId={threadId}
-                onNodeSelect={setSelectedNode}
+                onNodeSelect={(node) => setSelectedNodes(node ? [node] : [])}
                 selectedNode={selectedNode}
             />
         );
@@ -1888,6 +2008,8 @@ export function WorldMapView({ embeddedInDecisions = false, decisionsWithVersion
 
                             {kgHistory.versions.map((v: any) => {
                                 const isDecision = kgDecisions.some((d: any) => (d.kg_version_sha ?? d.proposed_kg_version_sha) === v.id);
+                                const currentDecision = currentDecisionId ? kgDecisions.find((d: KgDecisionRow) => d.id === currentDecisionId) : undefined;
+                                const isCurrentContext = Boolean(currentDecision && (currentDecision.kg_version_sha === v.id || currentDecision.proposed_kg_version_sha === v.id));
                                 const phase = v.source === "organization" ? "Organization" : (v.source === "project" ? "Project" : (v.source ?? "Project"));
                                 const cloneLabel = v.source === "organization" ? "Org" : "—";
                                 return (
@@ -1895,7 +2017,8 @@ export function WorldMapView({ embeddedInDecisions = false, decisionsWithVersion
                                         key={v.id}
                                         className={cn(
                                             "p-3 rounded-md cursor-pointer transition-colors flex flex-col gap-1 border border-transparent",
-                                            activeVersion === v.id ? "bg-purple-500/10 border-purple-500/20" : "hover:bg-muted"
+                                            activeVersion === v.id ? "bg-purple-500/10 border-purple-500/20" : "hover:bg-muted",
+                                            isCurrentContext && activeVersion !== v.id && "ring-1 ring-primary/50"
                                         )}
                                         onClick={() => {
                                             setActiveVersion(v.id);
@@ -1934,6 +2057,9 @@ export function WorldMapView({ embeddedInDecisions = false, decisionsWithVersion
                                             )}
                                             {isDecision && (
                                                 <span className="text-[9px] text-purple-600 dark:text-purple-400">Decision</span>
+                                            )}
+                                            {isCurrentContext && (
+                                                <span className="text-[9px] px-1.5 py-0.5 rounded bg-primary/20 text-primary border border-primary/30" title="Context for current conversation">Context</span>
                                             )}
                                             {(() => {
                                                 const parsed = parseDecisionCommitMessage(v.message_full);
@@ -2027,7 +2153,7 @@ export function WorldMapView({ embeddedInDecisions = false, decisionsWithVersion
                     <div ref={containerRef} className="flex-1 relative overflow-hidden border-b border-border min-h-0" onClick={(e) => {
                         // Only close if clicking directly on the map background, not on nodes
                         if (e.target === e.currentTarget || (e.target as Element).closest('svg')) {
-                            setSelectedNode(null);
+                            setSelectedNodes([]);
                         }
                     }}>
                         {(() => {
@@ -2134,7 +2260,7 @@ export function WorldMapView({ embeddedInDecisions = false, decisionsWithVersion
                     <div className="h-96 relative overflow-hidden flex flex-col border-t border-border shrink-0" onClick={(e) => e.stopPropagation()}>
                         <NodeDetailPanel
                             node={selectedNode}
-                            onClose={() => setSelectedNode(null)}
+                            onClose={() => setSelectedNodes([])}
                             position="bottom"
                             threadId={threadId}
                             contentVersion={activeVersion}
@@ -2142,7 +2268,7 @@ export function WorldMapView({ embeddedInDecisions = false, decisionsWithVersion
                     </div>
                 </div>
             ) : (
-                <div ref={containerRef} className="flex-1 min-h-0 flex flex-col relative overflow-hidden" onClick={() => { setSelectedNode(null); setFocusedNodeId(null); }}>
+                <div ref={containerRef} className="flex-1 min-h-0 flex flex-col relative overflow-hidden" onClick={() => { setSelectedNodes([]); setFocusedNodeId(null); }}>
                     {(() => {
                         const graphContentSimple = (
                             <>
@@ -2346,7 +2472,7 @@ export function WorldMapView({ embeddedInDecisions = false, decisionsWithVersion
                                                                     <div className="flex items-center gap-1 mb-0.5">
                                                                         <span className="text-[9px] font-medium text-muted-foreground">{tpl.templateName}</span>
                                                                         {firstArtId != null ? (
-                                                                            <button type="button" onClick={(e) => { e.stopPropagation(); setFocusedNodeId(firstArtId); const node = data?.nodes?.find((n: Node) => n.id === firstArtId); if (node) setSelectedNode(node); }} className={cn("rounded px-1 py-0.5 text-[8px] font-medium border transition-colors", isFocused ? "border-primary bg-primary/20 text-primary" : "border-border bg-muted/30 hover:bg-muted/50 text-muted-foreground")} title="Focus map on this artifact (contained nodes + trace links)">Focus</button>
+                                                                            <button type="button" onClick={(e) => { e.stopPropagation(); setFocusedNodeId(firstArtId); const node = data?.nodes?.find((n: Node) => n.id === firstArtId); if (node) setSelectedNodes([node]); }} className={cn("rounded px-1 py-0.5 text-[8px] font-medium border transition-colors", isFocused ? "border-primary bg-primary/20 text-primary" : "border-border bg-muted/30 hover:bg-muted/50 text-muted-foreground")} title="Focus map on this artifact (contained nodes + trace links)">Focus</button>
                                                                         ) : null}
                                                                     </div>
                                                                     {risksAddressed > 0 ? (

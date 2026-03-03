@@ -28,6 +28,7 @@ import {
   LayoutDashboard,
   GitCompare,
 } from "lucide-react";
+import { usePathname, useSearchParams } from "next/navigation";
 import { useQueryState, parseAsBoolean } from "nuqs";
 import { StickToBottom, useStickToBottomContext } from "use-stick-to-bottom";
 import ThreadHistory from "./history";
@@ -58,6 +59,7 @@ import {
 import { UserMenu } from "./user-menu";
 import { RunComparisonModal } from "./run-comparison-modal";
 import { ErrorBoundary } from "@/components/error-boundary";
+import { ChromeRewriterToolbar } from "@/components/chrome-rewriter-toolbar";
 
 function StickyToBottomContent(props: {
   content: ReactNode;
@@ -134,6 +136,27 @@ export function Thread({ embedded, className, hideArtifacts }: ThreadProps = {})
   );
   const [input, setInput] = useState("");
   const stream = useStreamContext();
+  const streamValues = (stream as { values?: { context_mode?: string; active_mode?: string; active_agent?: string } })?.values;
+  const contextMode = typeof streamValues?.context_mode === "string" ? streamValues.context_mode : undefined;
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
+  const versionInUrl = searchParams?.get("version") ?? undefined;
+  const compareInUrl = searchParams?.get("compare") ?? undefined;
+  const isMapRoute = pathname?.includes("/map");
+  const displayContextMode =
+    isMapRoute && versionInUrl
+      ? "historical"
+      : isMapRoute && (compareInUrl === "1" || compareInUrl === "true")
+        ? "comparing"
+        : contextMode;
+  const rawAgent = streamValues?.active_mode ?? streamValues?.active_agent;
+  const activeAgentLabel =
+    typeof rawAgent === "string" && rawAgent.trim() !== ""
+      ? rawAgent
+          .split("_")
+          .map((s) => s.charAt(0).toUpperCase() + s.slice(1).toLowerCase())
+          .join(" ")
+      : undefined;
   const {
     messages = [],
     isLoading,
@@ -589,6 +612,30 @@ export function Thread({ embedded, className, hideArtifacts }: ThreadProps = {})
                     {branding.brand_title}
                   </span>
                 </motion.button>
+                {/* Active agent/mode (e.g. Supervisor, Project configurator) — same as workbench header */}
+                {activeAgentLabel && (
+                  <span
+                    className="shrink-0 text-xs font-medium px-2 py-0.5 rounded-md border bg-muted/50 text-foreground border-border"
+                    title="Current agent (workflow phase)"
+                  >
+                    {activeAgentLabel}
+                  </span>
+                )}
+                {/* Context mode from stream or URL override on map (current | historical | draft | comparing) */}
+                {displayContextMode && (
+                  <span
+                    className={cn(
+                      "text-xs font-medium px-2 py-0.5 rounded-md border shrink-0",
+                      displayContextMode === "current" && "bg-primary/10 text-primary border-primary/30",
+                      displayContextMode === "historical" && "bg-amber-500/10 text-amber-700 dark:text-amber-400 border-amber-500/30",
+                      displayContextMode === "draft" && "bg-muted text-muted-foreground border-border",
+                      displayContextMode === "comparing" && "bg-blue-500/10 text-blue-700 dark:text-blue-400 border-blue-500/30"
+                    )}
+                    title={displayContextMode === "comparing" ? "Comparing two versions on map" : "Context: repo + path for this conversation"}
+                  >
+                    {displayContextMode === "current" ? "Current" : displayContextMode === "historical" ? "Historical" : displayContextMode === "comparing" ? "Comparing" : "Draft"}
+                  </span>
+                )}
               </div>
 
               <div className="flex items-center gap-4">
@@ -778,6 +825,12 @@ export function Thread({ embedded, className, hideArtifacts }: ThreadProps = {})
                           </div>
                         </div>
                         <div className="flex items-center gap-4">
+                          <ChromeRewriterToolbar
+                            value={input}
+                            onChange={setInput}
+                            disabled={isLoading}
+                            className="text-gray-600"
+                          />
                           <Label
                             htmlFor="file-input"
                             className="flex cursor-pointer items-center gap-2"
