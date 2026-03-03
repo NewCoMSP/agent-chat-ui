@@ -135,8 +135,16 @@ export function Thread({ embedded, className, hideArtifacts }: ThreadProps = {})
   );
   const [input, setInput] = useState("");
   const stream = useStreamContext();
-  const streamValues = (stream as { values?: { context_mode?: string } })?.values;
+  const streamValues = (stream as { values?: { context_mode?: string; active_mode?: string; active_agent?: string } })?.values;
   const contextMode = typeof streamValues?.context_mode === "string" ? streamValues.context_mode : undefined;
+  const rawAgent = streamValues?.active_mode ?? streamValues?.active_agent;
+  const activeAgentLabel =
+    typeof rawAgent === "string" && rawAgent.trim() !== ""
+      ? rawAgent
+          .split("_")
+          .map((s) => s.charAt(0).toUpperCase() + s.slice(1).toLowerCase())
+          .join(" ")
+      : undefined;
   const {
     messages = [],
     isLoading,
@@ -592,6 +600,15 @@ export function Thread({ embedded, className, hideArtifacts }: ThreadProps = {})
                     {branding.brand_title}
                   </span>
                 </motion.button>
+                {/* Active agent/mode (e.g. Supervisor, Project configurator) — same as workbench header */}
+                {activeAgentLabel && (
+                  <span
+                    className="shrink-0 text-xs font-medium px-2 py-0.5 rounded-md border bg-muted/50 text-foreground border-border"
+                    title="Current agent (workflow phase)"
+                  >
+                    {activeAgentLabel}
+                  </span>
+                )}
                 {/* Context mode from stream (current | historical | draft) — which repo+path the agent is using */}
                 {contextMode && (
                   <span
