@@ -134,6 +134,8 @@ export function Thread({ embedded, className, hideArtifacts }: ThreadProps = {})
   );
   const [input, setInput] = useState("");
   const stream = useStreamContext();
+  const streamValues = (stream as { values?: { context_mode?: string } })?.values;
+  const contextMode = typeof streamValues?.context_mode === "string" ? streamValues.context_mode : undefined;
   const {
     messages = [],
     isLoading,
@@ -589,6 +591,20 @@ export function Thread({ embedded, className, hideArtifacts }: ThreadProps = {})
                     {branding.brand_title}
                   </span>
                 </motion.button>
+                {/* Context mode from stream (current | historical | draft) — which repo+path the agent is using */}
+                {contextMode && (
+                  <span
+                    className={cn(
+                      "text-xs font-medium px-2 py-0.5 rounded-md border shrink-0",
+                      contextMode === "current" && "bg-primary/10 text-primary border-primary/30",
+                      contextMode === "historical" && "bg-amber-500/10 text-amber-700 dark:text-amber-400 border-amber-500/30",
+                      contextMode === "draft" && "bg-muted text-muted-foreground border-border"
+                    )}
+                    title="Context: repo + path for this conversation"
+                  >
+                    {contextMode === "current" ? "Current" : contextMode === "historical" ? "Historical" : "Draft"}
+                  </span>
+                )}
               </div>
 
               <div className="flex items-center gap-4">

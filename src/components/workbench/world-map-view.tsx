@@ -213,10 +213,20 @@ export interface WorldMapViewProps {
     embeddedInDecisions?: boolean;
     /** When provided (e.g. from decisions panel), merge kg_version_sha/proposed_kg_version_sha so map shows "Decision" badge for single-commit-applied decisions. */
     decisionsWithVersionSha?: { id: string; kg_version_sha?: string; proposed_kg_version_sha?: string }[];
+    /** Context path/current/mode from stream or parent. When not provided, read from stream.values. */
+    pathDecisionIds?: string[];
+    currentDecisionId?: string;
+    kgVersionSha?: string;
+    contextMode?: string;
 }
 
-export function WorldMapView({ embeddedInDecisions = false, decisionsWithVersionSha }: WorldMapViewProps = {}) {
+export function WorldMapView({ embeddedInDecisions = false, decisionsWithVersionSha, pathDecisionIds: pathDecisionIdsProp, currentDecisionId: currentDecisionIdProp, kgVersionSha: kgVersionShaProp, contextMode: contextModeProp }: WorldMapViewProps = {}) {
     const stream = useStreamContext();
+    const streamValues = (stream as { values?: { context_path_decision_ids?: string[]; context_current_decision_id?: string; kg_version_sha?: string; context_mode?: string } })?.values;
+    const pathDecisionIds = pathDecisionIdsProp ?? streamValues?.context_path_decision_ids;
+    const currentDecisionId = currentDecisionIdProp ?? streamValues?.context_current_decision_id;
+    const kgVersionSha = kgVersionShaProp ?? streamValues?.kg_version_sha;
+    const contextMode = contextModeProp ?? streamValues?.context_mode;
     const [viewMode, setViewMode] = useQueryState("view", { defaultValue: "map" });
     /** When viewMode === 'simulate', beat (0..7) drives visualization: beat 0 = no edges. */
     const [simulateBeat, setSimulateBeat] = useState(0);
@@ -402,6 +412,18 @@ export function WorldMapView({ embeddedInDecisions = false, decisionsWithVersion
             });
         }
     }, [selectedTimelineVersionId, timelineVersionDiff, loadingTimelineDiff]);
+
+    // Sync timeline selection from stream context (kg_version_sha = "current" context for this conversation)
+    useEffect(() => {
+        if (!kgVersionSha || !kgHistory?.versions?.length) return;
+        const versions = kgHistory.versions as { id?: string }[];
+        const hasVersion = versions.some((v) => v.id === kgVersionSha);
+        if (hasVersion) {
+            setSelectedTimelineVersionId(kgVersionSha);
+            setActiveVersion(kgVersionSha);
+            fetchDiffForTimelineVersion(kgVersionSha);
+        }
+    }, [kgVersionSha, kgHistory?.versions?.length]);
 
     // When decisions panel passes SHAs (e.g. after apply), merge into kgDecisions so "Decision" badge and diff work
     useEffect(() => {
@@ -1976,6 +1998,8 @@ export function WorldMapView({ embeddedInDecisions = false, decisionsWithVersion
 
                             {kgHistory.versions.map((v: any) => {
                                 const isDecision = kgDecisions.some((d: any) => (d.kg_version_sha ?? d.proposed_kg_version_sha) === v.id);
+                                const currentDecision = currentDecisionId ? kgDecisions.find((d: KgDecisionRow) => d.id === currentDecisionId) : undefined;
+                                const isCurrentContext = Boolean(currentDecision && (currentDecision.kg_version_sha === v.id || currentDecision.proposed_kg_version_sha === v.id));
                                 const phase = v.source === "organization" ? "Organization" : (v.source === "project" ? "Project" : (v.source ?? "Project"));
                                 const cloneLabel = v.source === "organization" ? "Org" : "—";
                                 return (
@@ -1983,7 +2007,8 @@ export function WorldMapView({ embeddedInDecisions = false, decisionsWithVersion
                                         key={v.id}
                                         className={cn(
                                             "p-3 rounded-md cursor-pointer transition-colors flex flex-col gap-1 border border-transparent",
-                                            activeVersion === v.id ? "bg-purple-500/10 border-purple-500/20" : "hover:bg-muted"
+                                            activeVersion === v.id ? "bg-purple-500/10 border-purple-500/20" : "hover:bg-muted",
+                                            isCurrentContext && activeVersion !== v.id && "ring-1 ring-primary/50"
                                         )}
                                         onClick={() => {
                                             setActiveVersion(v.id);
@@ -2022,6 +2047,9 @@ export function WorldMapView({ embeddedInDecisions = false, decisionsWithVersion
                                             )}
                                             {isDecision && (
                                                 <span className="text-[9px] text-purple-600 dark:text-purple-400">Decision</span>
+                                            )}
+                                            {isCurrentContext && (
+                                                <span className="text-[9px] px-1.5 py-0.5 rounded bg-primary/20 text-primary border border-primary/30" title="Context for current conversation">Context</span>
                                             )}
                                             {(() => {
                                                 const parsed = parseDecisionCommitMessage(v.message_full);

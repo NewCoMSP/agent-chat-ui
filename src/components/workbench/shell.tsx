@@ -37,6 +37,8 @@ export function WorkbenchShell({ children }: { children: React.ReactNode }) {
     // Robust Mode Derivation (active_mode and active_agent are synced from graph/overlay)
     const values = (stream as any)?.values;
     const rawAgent = values?.active_mode ?? values?.active_agent;
+    /** Context mode from get_kg_context_for_turn: current | historical | draft. Shown in header and chat. */
+    const contextMode = typeof values?.context_mode === "string" ? values.context_mode : undefined;
     // Accept any mode string from backend; fallback to supervisor so we stay in sync when new phases are added
     const activeAgent: string =
         typeof rawAgent === "string" && rawAgent.trim() !== ""
@@ -484,6 +486,20 @@ export function WorkbenchShell({ children }: { children: React.ReactNode }) {
                             </div>
                         ) : (
                             <span className="text-sm text-muted-foreground italic">Workflow: —</span>
+                        )}
+                        {/* Context mode pill: Current / Historical / Draft (from KG context for this turn) */}
+                        {contextMode && (
+                            <span
+                                className={cn(
+                                    "shrink-0 text-xs font-medium px-2 py-0.5 rounded-md border",
+                                    contextMode === "current" && "bg-primary/10 text-primary border-primary/30",
+                                    contextMode === "historical" && "bg-amber-500/10 text-amber-700 dark:text-amber-400 border-amber-500/30",
+                                    contextMode === "draft" && "bg-muted text-muted-foreground border-border"
+                                )}
+                                title={`Context: ${contextMode} (repo + path for this conversation)`}
+                            >
+                                {contextMode === "current" ? "Current" : contextMode === "historical" ? "Historical" : "Draft"}
+                            </span>
                         )}
                     </div>
 
