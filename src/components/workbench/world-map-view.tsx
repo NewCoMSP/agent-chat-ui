@@ -175,6 +175,20 @@ const templateIdToAgentId: Record<string, string> = (() => {
     return out;
 })();
 
+/** Template id → set of contained node types (for Beat 2: show only ART→contained-type edges). */
+const templateIdToTypes: Record<string, Set<string>> = (() => {
+    const out: Record<string, Set<string>> = {};
+    for (const agent of MAP_LEGEND_AGENT_HIERARCHY) {
+        for (const t of agent.templates) {
+            if (t.templateId) out[t.templateId] = new Set(t.types);
+        }
+    }
+    return out;
+})();
+
+/** Agent order for Beat 3 linear flow (matches workflow strip: Supervisor → … → Commercial). */
+const LINEAR_AGENT_ORDER = ['supervisor', 'project_configurator', 'concept', 'requirements', 'architecture', 'implementation', 'commercial', 'design', 'system'];
+
 /** Brand hue (customer brand); light → dark = start → finish. */
 const MAP_LEGEND_BRAND_HUE = 217;
 /** Agent-level colours: same hue, light (start) → dark (finish). */
@@ -204,6 +218,11 @@ export interface WorldMapViewProps {
 export function WorldMapView({ embeddedInDecisions = false, decisionsWithVersionSha }: WorldMapViewProps = {}) {
     const stream = useStreamContext();
     const [viewMode, setViewMode] = useQueryState("view", { defaultValue: "map" });
+    /** When viewMode === 'simulate', beat (0..7) drives visualization: beat 0 = no edges. */
+    const [simulateBeat, setSimulateBeat] = useState(0);
+    const [simulatePlaying, setSimulatePlaying] = useState(false);
+    const simulateBeatRef = useRef(0);
+    simulateBeatRef.current = simulateBeat;
     const [compareParam] = useQueryState("compare"); // When "1" or "true", open timeline (header "Compare on map")
     const [versionParam] = useQueryState("version"); // Select this decision version in timeline and show its diff (per-decision "Compare on map")
     /** Filtered KG streamed from backend when Project Configurator runs; use for map without extra /api/kg-data. */
@@ -236,6 +255,10 @@ export function WorldMapView({ embeddedInDecisions = false, decisionsWithVersion
             setShowHistory(true);
         }
     }, [compareParam]);
+    // When switching to Simulate, start at beat 0 (step 1: no edges)
+    useEffect(() => {
+        if (viewMode === 'simulate') setSimulateBeat(0);
+    }, [viewMode]);
     // When version= in URL (per-decision "Compare on map"), open timeline, select that version, show its diff
     const lastUrlVersion = useRef<string | null>(null);
     useEffect(() => {
@@ -1149,27 +1172,12 @@ export function WorldMapView({ embeddedInDecisions = false, decisionsWithVersion
         const getAgentIdForNode = (n: Node) => artIdToAgentId[n.id] ?? typeToAgentId[n.type] ?? 'system';
         let agentIdsInGraph = Array.from(new Set(effectiveNodes.map(getAgentIdForNode)));
         if (agentIdsInGraph.length === 0) agentIdsInGraph = ['system'];
-        const phaseCenterByAgent: Record<string, { x: number; y: number }> = {};
-        agentIdsInGraph.forEach((agentId, i) => {
-            const angle = (i / Math.max(1, agentIdsInGraph.length)) * 2 * Math.PI - Math.PI / 2;
-            phaseCenterByAgent[agentId] = {
-                x: centerX + phaseRadius * Math.cos(angle),
-                y: centerY + phaseRadius * Math.sin(angle),
-            };
-        });
-        const artPositionByNodeId: Record<string, { x: number; y: number }> = {};
-        const artRadius = 55;
-        agentIdsInGraph.forEach((agentId) => {
-            const artsInPhase = effectiveNodes.filter((n) => artIdToAgentId[n.id] === agentId);
-            const phaseCenter = phaseCenterByAgent[agentId] ?? { x: centerX, y: centerY };
-            artsInPhase.forEach((n, j) => {
-                const angle = (j / Math.max(1, artsInPhase.length)) * 2 * Math.PI - Math.PI / 2;
-                artPositionByNodeId[n.id] = {
-                    x: phaseCenter.x + artRadius * Math.cos(angle),
-                    y: phaseCenter.y + artRadius * Math.sin(angle),
-                };
-            });
-        });
+        const artIdToTemplateId: Record<string, string> = {};
+        for (const [tplId, artIds] of Object.entries(artNodeIdsByTemplateId)) {
+            for (const id of artIds) {
+                if (!(id in artIdToTemplateId)) artIdToTemplateId[id] = tplId;
+            }
+        }
         const nodeIdToOwnerArtId: Record<string, string> = {};
         const artIdsSet = new Set(Object.keys(artIdToAgentId));
         for (const l of effectiveValidLinks) {
@@ -1179,22 +1187,86 @@ export function WorldMapView({ embeddedInDecisions = false, decisionsWithVersion
             const tgt = typeof l.target === 'string' ? l.target : (l.target as Node)?.id;
             if (src && tgt && artIdsSet.has(src)) nodeIdToOwnerArtId[tgt] = src;
         }
-        effectiveNodes.forEach((n) => {
-            const pos = artPositionByNodeId[n.id];
-            if (pos) {
-                n.fx = pos.x;
-                n.fy = pos.y;
+        const templateIdToNodeIds: Record<string, Set<string>> = {};
+        for (const tplId of Object.keys(artNodeIdsByTemplateId)) {
+            const artIds = new Set(artNodeIdsByTemplateId[tplId] ?? []);
+            const nodeIds = new Set(artIds);
+            effectiveNodes.forEach((n) => {
+                if (artIds.has(nodeIdToOwnerArtId[n.id] ?? '')) nodeIds.add(n.id);
+            });
+            if (nodeIds.size > 0) templateIdToNodeIds[tplId] = nodeIds;
+        }
+        // Beat 0–1: keep nodes in same force-directed position (no constellation). Beat 2+: constellation/linear.
+        const useConstellationLayout = viewMode !== 'simulate' || simulateBeat >= 2;
+        const useLinearLayout = viewMode === 'simulate' && simulateBeat === 2;
+        const phaseCenterByAgent: Record<string, { x: number; y: number }> = {};
+        if (useLinearLayout) {
+            const order = LINEAR_AGENT_ORDER.filter((id) => agentIdsInGraph.includes(id));
+            const pad = width * 0.06;
+            const span = width - 2 * pad;
+            order.forEach((agentId, i) => {
+                phaseCenterByAgent[agentId] = {
+                    x: pad + (order.length <= 1 ? 0.5 : i / (order.length - 1)) * span,
+                    y: centerY,
+                };
+            });
+            agentIdsInGraph.forEach((agentId) => {
+                if (!(agentId in phaseCenterByAgent))
+                    phaseCenterByAgent[agentId] = { x: centerX, y: centerY };
+            });
+        } else {
+            agentIdsInGraph.forEach((agentId, i) => {
+                const angle = (i / Math.max(1, agentIdsInGraph.length)) * 2 * Math.PI - Math.PI / 2;
+                phaseCenterByAgent[agentId] = {
+                    x: centerX + phaseRadius * Math.cos(angle),
+                    y: centerY + phaseRadius * Math.sin(angle),
+                };
+            });
+        }
+        const artPositionByNodeId: Record<string, { x: number; y: number }> = {};
+        const artRadius = 55;
+        agentIdsInGraph.forEach((agentId) => {
+            const artsInPhase = effectiveNodes.filter((n) => artIdToAgentId[n.id] === agentId);
+            const phaseCenter = phaseCenterByAgent[agentId] ?? { x: centerX, y: centerY };
+            if (useLinearLayout) {
+                const spread = Math.min(50, 24 * Math.max(1, artsInPhase.length - 1));
+                artsInPhase.forEach((n, j) => {
+                    const dx = artsInPhase.length <= 1 ? 0 : (j - (artsInPhase.length - 1) / 2) * spread;
+                    artPositionByNodeId[n.id] = { x: phaseCenter.x + dx, y: phaseCenter.y };
+                });
             } else {
-                const ownerArtId = nodeIdToOwnerArtId[n.id];
-                const target = ownerArtId ? artPositionByNodeId[ownerArtId] : phaseCenterByAgent[getAgentIdForNode(n)];
-                if (target) {
-                    n.x = target.x + (Math.random() - 0.5) * 40;
-                    n.y = target.y + (Math.random() - 0.5) * 40;
-                }
-                n.fx = null;
-                n.fy = null;
+                artsInPhase.forEach((n, j) => {
+                    const angle = (j / Math.max(1, artsInPhase.length)) * 2 * Math.PI - Math.PI / 2;
+                    artPositionByNodeId[n.id] = {
+                        x: phaseCenter.x + artRadius * Math.cos(angle),
+                        y: phaseCenter.y + artRadius * Math.sin(angle),
+                    };
+                });
             }
         });
+        if (useConstellationLayout) {
+            effectiveNodes.forEach((n) => {
+                const pos = artPositionByNodeId[n.id];
+                if (pos) {
+                    n.fx = pos.x;
+                    n.fy = pos.y;
+                } else {
+                    const ownerArtId = nodeIdToOwnerArtId[n.id];
+                    const target = ownerArtId ? artPositionByNodeId[ownerArtId] : phaseCenterByAgent[getAgentIdForNode(n)];
+                    if (target) {
+                        n.x = target.x + (Math.random() - 0.5) * 40;
+                        n.y = target.y + (Math.random() - 0.5) * 40;
+                    }
+                    n.fx = null;
+                    n.fy = null;
+                }
+            });
+        } else {
+            effectiveNodes.forEach((n) => {
+                n.fx = null;
+                n.fy = null;
+            });
+        }
 
         const simulation = d3.forceSimulation<Node>(effectiveNodes)
             .force('link', d3.forceLink<Node, Link>(effectiveValidLinks).id(d => d.id).distance(120))
@@ -1206,13 +1278,13 @@ export function WorldMapView({ embeddedInDecisions = false, decisionsWithVersion
                 const ownerArtId = nodeIdToOwnerArtId[d.id];
                 const target = ownerArtId ? artPositionByNodeId[ownerArtId] : phaseCenterByAgent[getAgentIdForNode(d)];
                 return target?.x ?? centerX;
-            }).strength(0.07))
+            }).strength(useConstellationLayout ? 0.07 : 0))
             .force('constellation-y', d3.forceY((d: Node) => {
                 if (d.fy != null) return d.fy;
                 const ownerArtId = nodeIdToOwnerArtId[d.id];
                 const target = ownerArtId ? artPositionByNodeId[ownerArtId] : phaseCenterByAgent[getAgentIdForNode(d)];
                 return target?.y ?? centerY;
-            }).strength(0.07));
+            }).strength(useConstellationLayout ? 0.07 : 0));
         simulationRef.current = simulation;
 
         const linkKgStatus = (d: Link) => ((d as any).metadata?.status ?? 'active') as string;
@@ -1352,15 +1424,26 @@ export function WorldMapView({ embeddedInDecisions = false, decisionsWithVersion
             const linkTouchesFocus = (d: Link) => inFocusNodeIds.has(sourceId(d)) || inFocusNodeIds.has(targetId(d));
             const linkHighlighted = (d: Link) => focusedNodeId && linkTouchesFocus(d) && (isContentTraceLink(d) || isReferencesFromFocus(d));
 
-            // Update phase hulls (convex hull per agent)
-            const hullData = agentIdsInGraph.map((agentId) => {
-                const points = effectiveNodes
-                    .filter((n) => getAgentIdForNode(n) === agentId && n.x != null && n.y != null)
-                    .map((n) => [n.x!, n.y!] as [number, number]);
-                const polygon = points.length >= 3 ? d3PolygonHull(points) : null;
-                return { agentId, polygon };
-            });
-            const hullPaths = hullGroup.selectAll<SVGPathElement, { agentId: string; polygon: [number, number][] | null }>('path').data(hullData, (d) => d.agentId);
+            // Update phase hulls: Beat 1/2 = per-template (artifact constellations); else per-agent
+            const beat = viewMode === 'simulate' ? simulateBeatRef.current : -1;
+            const useTemplateHulls = viewMode === 'simulate' && (beat === 1 || beat === 2);
+            const hullData = useTemplateHulls
+                ? Object.entries(templateIdToNodeIds).map(([tplId, nodeIdSet]) => {
+                    const points = effectiveNodes
+                        .filter((n) => nodeIdSet.has(n.id) && n.x != null && n.y != null)
+                        .map((n) => [n.x!, n.y!] as [number, number]);
+                    const polygon = points.length >= 3 ? d3PolygonHull(points) : null;
+                    const agentId = templateIdToAgentId[tplId] ?? 'system';
+                    return { key: tplId, polygon, agentId };
+                })
+                : agentIdsInGraph.map((agentId) => {
+                    const points = effectiveNodes
+                        .filter((n) => getAgentIdForNode(n) === agentId && n.x != null && n.y != null)
+                        .map((n) => [n.x!, n.y!] as [number, number]);
+                    const polygon = points.length >= 3 ? d3PolygonHull(points) : null;
+                    return { key: agentId, polygon, agentId };
+                });
+            const hullPaths = hullGroup.selectAll<SVGPathElement, { key: string; polygon: [number, number][] | null; agentId: string }>('path').data(hullData, (d) => d.key);
             hullPaths.join(
                 (enter) => enter.append('path')
                     .attr('fill', (d) => (agentColors[d.agentId] ?? '#888'))
@@ -1382,6 +1465,20 @@ export function WorldMapView({ embeddedInDecisions = false, decisionsWithVersion
                 .attr('x2', d => (d.target as Node).x!)
                 .attr('y2', d => (d.target as Node).y!)
                 .style('opacity', d => {
+                    // Step 1: Simulate beat 0 = no edges (chaos — no connection)
+                    if (viewMode === 'simulate' && simulateBeatRef.current === 0) return 0;
+                    // Beat 2/3: only REFERENCES from artifact to its contained node types (same hierarchy as context pane)
+                    if (viewMode === 'simulate' && (simulateBeatRef.current === 1 || simulateBeatRef.current === 2)) {
+                        if (linkType(d) !== 'REFERENCES') return 0;
+                        const srcId = sourceId(d);
+                        const tgtId = targetId(d);
+                        if (!artIdsSet.has(srcId)) return 0;
+                        const tplId = artIdToTemplateId[srcId];
+                        const allowedTypes = tplId ? templateIdToTypes[tplId] : null;
+                        const tgtNode = effectiveNodes.find((n) => n.id === tgtId);
+                        if (!allowedTypes || !tgtNode || !allowedTypes.has(tgtNode.type)) return 0;
+                        return 0.6;
+                    }
                     if (focusedNodeId) {
                         if (linkHighlighted(d)) return 1;
                         return 0.2;
@@ -1454,7 +1551,7 @@ export function WorldMapView({ embeddedInDecisions = false, decisionsWithVersion
                 }
             }
         };
-    }, [data, viewMode, diffData, selectedTimelineVersionId, timelineVersionDiff, selectedNode, focusedNodeId, compareViewMode, mapSearchQuery, typeFilter, statusFilter]);
+    }, [data, viewMode, diffData, selectedTimelineVersionId, timelineVersionDiff, selectedNode, focusedNodeId, compareViewMode, mapSearchQuery, typeFilter, statusFilter, viewMode === 'simulate' && simulateBeat >= 2 ? simulateBeat : 0]);
 
     // Center map on selected node when it changes
     useEffect(() => {
@@ -2006,8 +2103,14 @@ export function WorldMapView({ embeddedInDecisions = false, decisionsWithVersion
                                 containerRef,
                                 scope: { orgId: orgIdFromRoute ?? undefined, projectId: scopeProjectId ?? undefined, threadId: threadId ?? undefined, phaseId: scopeProjectId ?? undefined },
                                 initialGraphForSimulate: viewMode === 'simulate' ? (data as MapViewGraphData | null) : null,
-                                graphContent: viewMode === 'map' ? graphContentWithCompare : undefined,
+                                graphContent: (viewMode === 'map' || viewMode === 'simulate') ? graphContentWithCompare : undefined,
                                 artifactsContent: viewMode === 'artifacts' ? <ArtifactsView /> : undefined,
+                                simulateBeat: viewMode === 'simulate' ? simulateBeat : undefined,
+                                simulatePlaying: viewMode === 'simulate' ? simulatePlaying : undefined,
+                                onSimulateBeatChange: viewMode === 'simulate' ? setSimulateBeat : undefined,
+                                onSimulatePlay: viewMode === 'simulate' ? () => setSimulatePlaying(true) : undefined,
+                                onSimulatePause: viewMode === 'simulate' ? () => setSimulatePlaying(false) : undefined,
+                                onSimulateRestart: viewMode === 'simulate' ? () => { setSimulateBeat(0); setSimulatePlaying(true); } : undefined,
                             });
                         })()}
 
@@ -2077,8 +2180,14 @@ export function WorldMapView({ embeddedInDecisions = false, decisionsWithVersion
                             containerRef,
                             scope: { orgId: orgIdFromRoute ?? undefined, projectId: scopeProjectId ?? undefined, threadId: threadId ?? undefined, phaseId: scopeProjectId ?? undefined },
                             initialGraphForSimulate: viewMode === 'simulate' ? (data as MapViewGraphData | null) : null,
-                            graphContent: viewMode === 'map' ? graphContentSimple : undefined,
+                            graphContent: (viewMode === 'map' || viewMode === 'simulate') ? graphContentSimple : undefined,
                             artifactsContent: viewMode === 'artifacts' ? <ArtifactsView /> : undefined,
+                            simulateBeat: viewMode === 'simulate' ? simulateBeat : undefined,
+                            simulatePlaying: viewMode === 'simulate' ? simulatePlaying : undefined,
+                            onSimulateBeatChange: viewMode === 'simulate' ? setSimulateBeat : undefined,
+                            onSimulatePlay: viewMode === 'simulate' ? () => setSimulatePlaying(true) : undefined,
+                            onSimulatePause: viewMode === 'simulate' ? () => setSimulatePlaying(false) : undefined,
+                            onSimulateRestart: viewMode === 'simulate' ? () => { setSimulateBeat(0); setSimulatePlaying(true); } : undefined,
                         });
                     })()}
 

@@ -7,7 +7,9 @@ import { chord as d3Chord, ribbon as d3Ribbon } from "d3-chord";
 import { polygonHull as d3PolygonHull } from "d3-polygon";
 
 const BEAT_DURATION_MS = 5000;
-const CAPTIONS: { script: string; outcome: string }[] = [
+
+/** Beat script + outcome; exported for Simulate overlay when using map graph. */
+export const DEMO_BEAT_CAPTIONS: { script: string; outcome: string }[] = [
     { script: "We start with individual ideas and conversations…", outcome: "Chaos — no connection." },
     { script: "First, tribes form around individuals and they form group identity, language and tools.", outcome: "Tribes — but still no shared context at the seams." },
     { script: "Then we organize: first in a linear pipeline.", outcome: "One workflow — many seams." },
@@ -17,6 +19,8 @@ const CAPTIONS: { script: string; outcome: string }[] = [
     { script: "Innovation is saying no to 1,000 things. (Steve Jobs)", outcome: "One place where your decisions have context." },
     { script: "OrchSync — what are you saying yes and no to today?", outcome: "OrchSync: one place where your decisions have context." },
 ];
+
+const CAPTIONS = DEMO_BEAT_CAPTIONS;
 
 interface DemoNode extends d3.SimulationNodeDatum {
     id: string;

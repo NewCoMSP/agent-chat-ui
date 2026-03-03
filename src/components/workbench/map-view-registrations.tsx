@@ -2,7 +2,7 @@
 
 import React from "react";
 import { viewRegistry } from "@/lib/view-registry";
-import { HeroDemoScene, type HeroDemoSceneGraphData } from "@/components/demo/HeroDemoScene";
+import { SimulateBeatOverlay } from "./simulate-beat-overlay";
 
 /** Register map content views (graph, artifacts, simulate). Called once when workbench loads. */
 function registerMapViews() {
@@ -16,19 +16,23 @@ function registerMapViews() {
         render: (props) => props.artifactsContent ?? null,
     });
 
+    /** Simulate = same force-directed graph as Map, with beat narrative overlay (no HeroDemo). Beat drives viz: step 1 = beat 0 = no edges. */
     viewRegistry.register("simulate", {
         label: "Simulate",
-        render: (props) => (
-            <div className="h-full w-full flex flex-col overflow-hidden">
-                <HeroDemoScene
-                    initialGraph={(props.initialGraphForSimulate ?? undefined) as HeroDemoSceneGraphData | undefined}
-                    phaseId={props.scope?.phaseId ?? undefined}
-                    projectId={props.scope?.projectId ?? undefined}
-                    orgId={props.scope?.orgId ?? undefined}
-                    threadId={props.scope?.threadId ?? undefined}
-                />
-            </div>
-        ),
+        render: (props) =>
+            props.graphContent ? (
+                <div className="relative h-full w-full">
+                    {props.graphContent}
+                    <SimulateBeatOverlay
+                        beat={props.simulateBeat}
+                        onBeatChange={props.onSimulateBeatChange}
+                        playing={props.simulatePlaying}
+                        onPlay={props.onSimulatePlay}
+                        onPause={props.onSimulatePause}
+                        onRestart={props.onSimulateRestart}
+                    />
+                </div>
+            ) : null,
     });
 }
 

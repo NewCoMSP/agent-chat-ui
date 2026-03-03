@@ -31,6 +31,13 @@ export interface MapContentViewProps {
     graphContent?: ReactNode;
     /** For artifacts view: ArtifactsListView wrapper (provided by WorldMapView). */
     artifactsContent?: ReactNode;
+    /** Simulate view: beat (0..7) drives visualization; step 1 = beat 0 = no edges. */
+    simulateBeat?: number;
+    simulatePlaying?: boolean;
+    onSimulateBeatChange?: (beat: number) => void;
+    onSimulatePlay?: () => void;
+    onSimulatePause?: () => void;
+    onSimulateRestart?: () => void;
 }
 
 export interface MapContentViewDescriptor {
